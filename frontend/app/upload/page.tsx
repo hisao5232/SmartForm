@@ -10,10 +10,53 @@ interface UploadFile {
   previewUrl: string | null;
 }
 
+// APIレスポンスの型定義
+interface OCRResult {
+  id: string;
+  filename: string;
+  raw_text: string;
+  extracted_data: {
+    report_no?: string;
+    receipt_no?: string;
+    date?: string;
+    customer?: string;
+    billing_to?: string;
+    site_name?: string;
+    machine_name?: string;
+    management_no?: string;
+    hour_meter?: string;
+    repair_staff?: string;
+    repair_summary?: string;
+    work_time?: string;
+    travel_time?: string;
+    mileage?: string;
+    total_amount?: string;
+    parts_list?: Array<{
+      part_name?: string;
+      quantity?: string;
+      category?: string;
+      amount?: string;
+    }>;
+    other_notes?: string;
+  };
+}
+
+interface ApiResponse {
+  statusCode: number;
+  statusText: string;
+  data: OCRResult | null;
+  error?: string;
+}
+
 export default function UploadPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+
+  // API送信・ステータス管理用状態
+  const [isUploading, setIsUploading] = useState(false);
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
+
   const router = useRouter();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,9 +139,47 @@ export default function UploadPage() {
     });
   };
 
-  const handleUploadSubmit = () => {
+  // OCR解析APIへの送信処理
+  const handleUploadSubmit = async () => {
     if (files.length === 0) return;
-    alert(`${files.length}件のファイルを準備しました（バックエンドAPI連携待機中）`);
+
+    setIsUploading(true);
+    setApiResponse(null);
+
+    // 今回は先頭の1件をテスト送信（必要に応じてループ処理や複数ファイル対応化が可能）
+    const targetFile = files[0].file;
+    const formData = new FormData();
+    formData.append('file', targetFile);
+
+    // ファイル形式に応じたエンドポイントの自動切替
+    const isPdf = targetFile.type === 'application/pdf' || targetFile.name.endsWith('.pdf');
+    const endpoint = isPdf ? 'transcribe-pdf' : 'transcribe-image';
+    const apiUrl = `https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/${endpoint}`;
+
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      setApiResponse({
+        statusCode: res.status,
+        statusText: res.statusText || (res.ok ? 'OK' : 'Error'),
+        data: res.ok ? data : null,
+        error: res.ok ? undefined : data.detail || 'OCR処理に失敗しました',
+      });
+    } catch (err: any) {
+      setApiResponse({
+        statusCode: 500,
+        statusText: 'Fetch Error',
+        data: null,
+        error: err.message || 'ネットワークエラーが発生しました',
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   if (!isAuthenticated) {
@@ -131,7 +212,7 @@ export default function UploadPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl p-6">
+      <main className="mx-auto max-w-5xl space-y-6 p-6">
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-800">
             報告書のアップロード (OCR)
@@ -205,7 +286,8 @@ export default function UploadPage() {
                 </h3>
                 <button
                   onClick={() => setFiles([])}
-                  className="text-xs text-red-600 hover:underline"
+                  disabled={isUploading}
+                  className="text-xs text-red-600 hover:underline disabled:opacity-50"
                 >
                   すべて削除
                 </button>
@@ -221,7 +303,7 @@ export default function UploadPage() {
                       <img
                         src={item.previewUrl}
                         alt={item.file.name}
-                        className="h-12 w-12 rounded object-cover border"
+                        className="h-12 w-12 rounded border object-cover"
                       />
                     ) : (
                       <div className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 font-bold text-slate-500">
@@ -240,7 +322,8 @@ export default function UploadPage() {
 
                     <button
                       onClick={() => handleRemoveFile(item.id)}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      disabled={isUploading}
+                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
                     >
                       ✕
                     </button>
@@ -251,14 +334,91 @@ export default function UploadPage() {
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleUploadSubmit}
-                  className="rounded-lg bg-green-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-500"
+                  disabled={isUploading}
+                  className="flex items-center space-x-2 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-500 disabled:bg-slate-400"
                 >
-                  OCR解析を実行する
+                  {isUploading ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>OCR解析実行中...</span>
+                    </>
+                  ) : (
+                    <span>OCR解析を実行する</span>
+                  )}
                 </button>
               </div>
             </div>
           )}
         </div>
+
+        {/* バックエンドステータス・抽出データ表示ウィンドウ */}
+        {apiResponse && (
+          <div className="rounded-xl border bg-slate-900 text-slate-100 p-6 shadow-lg transition-all">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+              <div className="flex items-center space-x-3">
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Backend API Log
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold font-mono ${
+                    apiResponse.statusCode === 200
+                      ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-500/50'
+                      : 'bg-red-900/80 text-red-300 border border-red-500/50'
+                  }`}
+                >
+                  HTTP {apiResponse.statusCode} {apiResponse.statusText}
+                </span>
+              </div>
+              {apiResponse.data?.id && (
+                <span className="font-mono text-xs text-slate-400">
+                  Doc ID: <span className="text-amber-400">{apiResponse.data.id}</span>
+                </span>
+              )}
+            </div>
+
+            {/* エラー表示 */}
+            {apiResponse.error && (
+              <div className="mt-4 rounded-lg bg-red-950/50 border border-red-800/60 p-4 text-xs text-red-300 font-mono">
+                ❌ {apiResponse.error}
+              </div>
+            )}
+
+            {/* 成功時のデータプレビュー表示 */}
+            {apiResponse.data && (
+              <div className="mt-4 space-y-4">
+                {/* 構造化抽出データのキーバリュー表示 */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+                    Firestore Saved Data (extracted_data)
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-slate-950 p-4 rounded-lg text-xs font-mono border border-slate-800">
+                    <div><span className="text-slate-500">報告書No:</span> <span className="text-emerald-400">{apiResponse.data.extracted_data.report_no || '-'}</span></div>
+                    <div><span className="text-slate-500">受品書No:</span> <span className="text-emerald-400">{apiResponse.data.extracted_data.receipt_no || '-'}</span></div>
+                    <div><span className="text-slate-500">日付:</span> <span className="text-slate-200">{apiResponse.data.extracted_data.date || '-'}</span></div>
+                    <div><span className="text-slate-500">得意先:</span> <span className="text-slate-200">{apiResponse.data.extracted_data.customer || '-'}</span></div>
+                    <div><span className="text-slate-500">機械名:</span> <span className="text-amber-300 font-bold">{apiResponse.data.extracted_data.machine_name || '-'}</span></div>
+                    <div><span className="text-slate-500">管理番号:</span> <span className="text-slate-200">{apiResponse.data.extracted_data.management_no || '-'}</span></div>
+                    <div><span className="text-slate-500">担当者:</span> <span className="text-slate-200">{apiResponse.data.extracted_data.repair_staff || '-'}</span></div>
+                    <div className="col-span-2"><span className="text-slate-500">修理内容:</span> <span className="text-slate-200">{apiResponse.data.extracted_data.repair_summary || '-'}</span></div>
+                  </div>
+                </div>
+
+                {/* 生レスポンス JSON ツリー表示 */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+                    Raw JSON Response
+                  </h4>
+                  <pre className="max-h-60 overflow-y-auto rounded-lg bg-slate-950 p-4 font-mono text-xs text-emerald-400 border border-slate-800 leading-relaxed">
+                    {JSON.stringify(apiResponse.data, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
