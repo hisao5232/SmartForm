@@ -53,7 +53,10 @@ export default function HomePage() {
           </p>
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 p-4 hover:border-blue-400">
+            <div
+              onClick={() => router.push('/upload')}
+              className="cursor-pointer rounded-lg border border-slate-200 p-4 transition-all hover:border-blue-400 hover:shadow-sm"
+            >
               <h3 className="font-medium text-slate-800">📄 報告書アップロード (OCR)</h3>
               <p className="mt-1 text-xs text-slate-500">
                 手書き報告書の画像・PDFをアップロードしてテキスト化します。
