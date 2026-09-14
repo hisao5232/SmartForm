@@ -1,27 +1,24 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.gemini_service import gemini_service
+from app.services.firestore_service import firestore_service
 
-router = APIRouter(prefix="/api/v1/ocr", tags=["OCR"])
+router = APIRouter()
 
 @router.post("/transcribe-pdf")
 async def transcribe_pdf(file: UploadFile = File(...)):
-    # MIMEタイプのチェック
-    if file.content_type != "application/pdf":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="アップロードできるファイルはPDF形式のみです。"
-        )
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDFファイルを選択してください。")
 
-    try:
-        pdf_bytes = await file.read()
-        extracted_text = await gemini_service.transcribe_pdf(pdf_bytes)
-        
-        return {
-            "filename": file.filename,
-            "transcription": extracted_text
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"OCR処理中にエラーが発生しました: {str(e)}"
-        )
+    pdf_bytes = await file.read()
+    
+    # 1. Geminiで文字起こし
+    transcription_text = await gemini_service.transcribe_pdf(pdf_bytes)
+
+    # 2. Firestoreへ保存
+    doc_id = await firestore_service.save_transcription(file.filename, transcription_text)
+
+    return {
+        "id": doc_id,
+        "filename": file.filename,
+        "transcription": transcription_text
+    }
