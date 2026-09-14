@@ -1,3 +1,4 @@
+# app/routers/ocr.py
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.gemini_service import gemini_service
 from app.services.firestore_service import firestore_service
@@ -11,14 +12,16 @@ async def transcribe_pdf(file: UploadFile = File(...)):
 
     pdf_bytes = await file.read()
     
-    # 1. Geminiで文字起こし
-    transcription_text = await gemini_service.transcribe_pdf(pdf_bytes)
+    # 1. GeminiでJSON構造化抽出
+    result_json = await gemini_service.transcribe_pdf(pdf_bytes)
 
     # 2. Firestoreへ保存
-    doc_id = await firestore_service.save_transcription(file.filename, transcription_text)
+    doc_id = await firestore_service.save_transcription(file.filename, result_json)
 
     return {
         "id": doc_id,
         "filename": file.filename,
-        "transcription": transcription_text
+        "raw_text": result_json.get("raw_text"),
+        "extracted_data": result_json.get("extracted_data")
     }
+    
