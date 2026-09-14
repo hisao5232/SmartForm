@@ -17,9 +17,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# local env files (環境変数ファイルをリポジトリに入れない)
-**/.env*.local
-**/.env
+# local env files (環境変数ファイル・秘密鍵の完全除外)
+**/.env*
+!**/.env.example
 
 # vercel & cloudflare pages artifacts
 **/.vercel
@@ -29,6 +29,20 @@ yarn-error.log*
 *.tsbuildinfo
 **/next-env.d.ts
 
+# Python & FastAPI
+**/__pycache__/
+*.py[cod]
+*$py.class
+**/.venv/
+**/venv/
+**/.pytest_cache/
+
+# IDE & Editors
+.vscode/
+.idea/
+
 # OS metadata
 .DS_Store
 Thumbs.db
+
+*.pdf
