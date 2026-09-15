@@ -1,5 +1,4 @@
 'use client';
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkIsLoggedIn, setLoggedIn } from '@/lib/auth';
@@ -51,7 +50,6 @@ export default function HomePage() {
           <p className="mt-2 text-sm text-slate-600">
             SmartFormへようこそ。手書き報告書のOCR読み取りおよびデータベース検索を開始できます。
           </p>
-
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div
               onClick={() => router.push('/upload')}
@@ -62,7 +60,10 @@ export default function HomePage() {
                 手書き報告書の画像・PDFをアップロードしてテキスト化します。
               </p>
             </div>
-            <div className="rounded-lg border border-slate-200 p-4 hover:border-blue-400">
+            <div
+              onClick={() => router.push('/search')}
+              className="cursor-pointer rounded-lg border border-slate-200 p-4 transition-all hover:border-blue-400 hover:shadow-sm"
+            >
               <h3 className="font-medium text-slate-800">🔍 データベース検索</h3>
               <p className="mt-1 text-xs text-slate-500">
                 蓄積された過去の報告書データから検索・閲覧できます。
