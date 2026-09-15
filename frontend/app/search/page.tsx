@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 // ドキュメントの型定義
 interface DocumentData {
@@ -13,6 +14,7 @@ interface DocumentData {
 }
 
 export default function SearchPage() {
+  const router = useRouter();
   const [keyword, setKeyword] = useState('');
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,7 +27,9 @@ export default function SearchPage() {
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ocr-backend-288651941478.asia-northeast1.run.app';
+  const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL ||
+    'https://smartform-backend-416426508758.asia-northeast1.run.app';
 
   // 一覧の取得
   const fetchDocuments = async () => {
@@ -50,11 +54,12 @@ export default function SearchPage() {
       fetchDocuments();
       return;
     }
-
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/ocr/search?q=${encodeURIComponent(keyword)}`);
+      const res = await fetch(
+        `${API_BASE_URL}/api/v1/ocr/search?q=${encodeURIComponent(keyword)}`
+      );
       if (!res.ok) throw new Error('検索に失敗しました');
       const data = await res.json();
       setDocuments(data.results || []);
@@ -70,7 +75,7 @@ export default function SearchPage() {
     fetchDocuments();
   }, []);
 
-  // --- 編集モーダルの開始 ---
+  // 編集モーダルの開始
   const handleOpenEdit = (doc: DocumentData) => {
     setEditingDoc(doc);
     setEditFilename(doc.filename || '');
@@ -78,10 +83,9 @@ export default function SearchPage() {
     setJsonError(null);
   };
 
-  // --- 編集内容の保存 (PUT) ---
+  // 編集内容の保存 (PUT)
   const handleSaveEdit = async () => {
     if (!editingDoc) return;
-
     let parsedJson = {};
     try {
       parsedJson = JSON.parse(editJsonString);
@@ -90,23 +94,22 @@ export default function SearchPage() {
       setJsonError('JSONの形式が正しくありません。');
       return;
     }
-
     setIsUpdating(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/ocr/documents/${editingDoc.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: editFilename,
-          extracted_data: parsedJson,
-        }),
-      });
-
+      const res = await fetch(
+        `${API_BASE_URL}/api/v1/ocr/documents/${editingDoc.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename: editFilename,
+            extracted_data: parsedJson,
+          }),
+        }
+      );
       if (!res.ok) throw new Error('更新に失敗しました');
-
-      // 成功したらローカルのステートを更新して閉じる
       setDocuments((prev) =>
         prev.map((doc) =>
           doc.id === editingDoc.id
@@ -122,18 +125,17 @@ export default function SearchPage() {
     }
   };
 
-  // --- 削除処理 (DELETE) ---
+  // 削除処理 (DELETE)
   const handleDelete = async (docId: string) => {
     if (!confirm('このドキュメントを削除してもよろしいですか？')) return;
-
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/ocr/documents/${docId}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(
+        `${API_BASE_URL}/api/v1/ocr/documents/${docId}`,
+        {
+          method: 'DELETE',
+        }
+      );
       if (!res.ok) throw new Error('削除に失敗しました');
-
-      // 成功したらリストから除外
       setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
     } catch (err: any) {
       alert(err.message || '削除中にエラーが発生しました');
@@ -141,119 +143,170 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">ドキュメント検索・管理</h1>
-
-      {/* 検索フォーム */}
-      <form onSubmit={handleSearch} className="flex gap-2 mb-8">
-        <input
-          type="text"
-          placeholder="ファイル名やテキストで検索..."
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          検索
-        </button>
-        {keyword && (
-          <button
-            type="button"
-            onClick={() => {
-              setKeyword('');
-              fetchDocuments();
-            }}
-            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-100"
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      {/* ナビゲーションバー */}
+      <header className="border-b bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between p-4">
+          <h1
+            className="text-xl font-bold text-slate-800 cursor-pointer"
+            onClick={() => router.push('/')}
           >
-            リセット
+            SmartForm
+          </h1>
+          <button
+            onClick={() => router.push('/')}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            ← ダッシュボードへ戻る
           </button>
-        )}
-      </form>
+        </div>
+      </header>
 
-      {/* エラー表示 */}
-      {error && <div className="p-4 mb-4 text-red-700 bg-red-100 rounded">{error}</div>}
+      {/* メインコンテンツ */}
+      <main className="mx-auto max-w-6xl p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
+          <h2 className="text-xl font-bold text-slate-800 mb-4">
+            🔍 ドキュメント検索・管理
+          </h2>
 
-      {/* ローディング */}
-      {loading ? (
-        <div className="text-center py-8 text-gray-500">読み込み中...</div>
-      ) : (
-        <div className="space-y-4">
-          {documents.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">データが見つかりませんでした</div>
+          {/* 検索フォーム */}
+          <form onSubmit={handleSearch} className="flex gap-2 mb-6">
+            <input
+              type="text"
+              placeholder="ファイル名やテキストで検索..."
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              className="flex-1 p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="submit"
+              className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              検索
+            </button>
+            {keyword && (
+              <button
+                type="button"
+                onClick={() => {
+                  setKeyword('');
+                  fetchDocuments();
+                }}
+                className="px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                リセット
+              </button>
+            )}
+          </form>
+
+          {/* エラー表示 */}
+          {error && (
+            <div className="p-4 mb-4 text-red-700 bg-red-50 border border-red-200 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          {/* ローディングまたは検索結果 */}
+          {loading ? (
+            <div className="text-center py-12 text-slate-500">
+              読み込み中...
+            </div>
           ) : (
-            documents.map((doc) => (
-              <div key={doc.id} className="p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
-                <div className="flex justify-between items-start mb-2">
-                  <h2 className="text-lg font-semibold text-gray-800">{doc.filename}</h2>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleOpenEdit(doc)}
-                      className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors"
-                    >
-                      編集
-                    </button>
-                    <button
-                      onClick={() => handleDelete(doc.id)}
-                      className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                    >
-                      削除
-                    </button>
-                  </div>
+            <div className="space-y-4">
+              {documents.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 border border-dashed border-slate-200 rounded-lg">
+                  データが見つかりませんでした
                 </div>
+              ) : (
+                documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="p-5 border border-slate-200 rounded-lg bg-white shadow-sm hover:border-slate-300 transition-all"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-800">
+                          {doc.filename}
+                        </h3>
+                        {doc.created_at && (
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            作成日時:{' '}
+                            {new Date(doc.created_at).toLocaleString('ja-JP')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(doc)}
+                          className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors"
+                        >
+                          編集
+                        </button>
+                        <button
+                          onClick={() => handleDelete(doc.id)}
+                          className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
 
-                {/* Extracted Data (JSON表示) */}
-                {doc.extracted_data && (
-                  <div className="mt-2">
-                    <span className="text-xs font-semibold text-gray-500">抽出データ:</span>
-                    <pre className="p-2 mt-1 bg-gray-50 rounded text-xs overflow-x-auto border border-gray-100">
-                      {JSON.stringify(doc.extracted_data, null, 2)}
-                    </pre>
+                    {/* Extracted Data (JSON表示) */}
+                    {doc.extracted_data && (
+                      <div className="mt-3">
+                        <span className="text-xs font-semibold text-slate-500 block mb-1">
+                          抽出データ:
+                        </span>
+                        <pre className="p-3 bg-slate-50 text-slate-700 rounded-lg text-xs overflow-x-auto border border-slate-200 font-mono">
+                          {JSON.stringify(doc.extracted_data, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))
+                ))
+              )}
+            </div>
           )}
         </div>
-      )}
+      </main>
 
       {/* 編集モーダル */}
       {editingDoc && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
-            <h2 className="text-xl font-bold mb-4">ドキュメントの編集</h2>
-
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-xl border border-slate-200 text-slate-800">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">
+              ドキュメントの編集
+            </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ファイル名</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  ファイル名
+                </label>
                 <input
                   type="text"
                   value={editFilename}
                   onChange={(e) => setEditFilename(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded"
+                  className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
                   抽出データ (JSON)
                 </label>
                 <textarea
                   rows={10}
                   value={editJsonString}
                   onChange={(e) => setEditJsonString(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded font-mono text-xs"
+                  className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-800 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                {jsonError && <p className="text-sm text-red-600 mt-1">{jsonError}</p>}
+                {jsonError && (
+                  <p className="text-sm text-red-600 mt-1">{jsonError}</p>
+                )}
               </div>
             </div>
-
             <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setEditingDoc(null)}
-                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 text-sm font-medium transition-colors"
                 disabled={isUpdating}
               >
                 キャンセル
@@ -261,7 +314,7 @@ export default function SearchPage() {
               <button
                 onClick={handleSaveEdit}
                 disabled={isUpdating}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 transition-colors"
               >
                 {isUpdating ? '保存中...' : '保存'}
               </button>
