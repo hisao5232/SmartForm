@@ -35,14 +35,34 @@ async def get_documents(limit: int = Query(20, ge=1, le=100)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/search")
-async def search_documents(q: str = Query(..., min_length=1, description="検索キーワード")):
+async def search_documents(
+    date: Optional[str] = Query(None, description="日付"),
+    customer: Optional[str] = Query(None, description="顧客名/納入先"),
+    machine_name: Optional[str] = Query(None, description="機種/型式"),
+    management_no: Optional[str] = Query(None, description="管理番号/機番"),
+    repair_staff: Optional[str] = Query(None, description="修理担当者"),
+    repair_summary: Optional[str] = Query(None, description="修理概要/症状"),
+    part_name: Optional[str] = Query(None, description="使用部品名"),
+):
     try:
-        results = await firestore_service.search_documents(keyword=q)
-        return {"query": q, "results": results}
+        search_params = {
+            "date": date,
+            "customer": customer,
+            "machine_name": machine_name,
+            "management_no": management_no,
+            "repair_staff": repair_staff,
+            "repair_summary": repair_summary,
+            "part_name": part_name,
+        }
+        # 空文字やNoneのクエリを除外
+        active_params = {k: v.strip() for k, v in search_params.items() if v and v.strip()}
+
+        results = await firestore_service.search_documents(search_params=active_params)
+        return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 新規追加: 更新エンドポイント ---
+# --- 更新エンドポイント ---
 @router.put("/documents/{doc_id}")
 async def update_document(doc_id: str, payload: UpdateDocumentRequest):
     """
@@ -64,7 +84,7 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 新規追加: 削除エンドポイント ---
+# --- 削除エンドポイント ---
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str):
     """
@@ -81,3 +101,4 @@ async def delete_document(doc_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        

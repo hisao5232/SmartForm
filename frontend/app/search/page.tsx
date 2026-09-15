@@ -4,11 +4,21 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DocumentCard, { DocumentData } from '@/app/components/DocumentCard';
 import EditDocumentModal from '@/app/components/EditDocumentModal';
-import SearchForm from '@/app/components/SearchForm';
+import SearchForm, { SearchParams } from '@/app/components/SearchForm';
+
+const initialSearchParams: SearchParams = {
+  date: '',
+  customer: '',
+  machine_name: '',
+  management_no: '',
+  repair_staff: '',
+  repair_summary: '',
+  part_name: '',
+};
 
 export default function SearchPage() {
   const router = useRouter();
-  const [keyword, setKeyword] = useState('');
+  const [searchParams, setSearchParams] = useState<SearchParams>(initialSearchParams);
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,18 +45,29 @@ export default function SearchPage() {
     }
   };
 
-  // 検索処理
+  // 検索処理 (複数クエリパラメータ対応)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!keyword.trim()) {
+
+    // 入力があるフィールドのみを取り出して URLSearchParams を構築
+    const queryParams = new URLSearchParams();
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (value.trim()) {
+        queryParams.append(key, value.trim());
+      }
+    });
+
+    // 何も入力されていない場合は一覧を取得
+    if (queryParams.toString() === '') {
       fetchDocuments();
       return;
     }
+
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `${API_BASE_URL}/api/v1/ocr/search?q=${encodeURIComponent(keyword)}`
+        `${API_BASE_URL}/api/v1/ocr/search?${queryParams.toString()}`
       );
       if (!res.ok) throw new Error('検索に失敗しました');
       const data = await res.json();
@@ -121,11 +142,11 @@ export default function SearchPage() {
           </h2>
 
           <SearchForm
-            keyword={keyword}
-            setKeyword={setKeyword}
+            searchParams={searchParams}
+            setSearchParams={setSearchParams}
             onSearch={handleSearch}
             onReset={() => {
-              setKeyword('');
+              setSearchParams(initialSearchParams);
               fetchDocuments();
             }}
           />
