@@ -1,4 +1,3 @@
-# app/services/gemini_service.py
 from google import genai
 from google.genai import types
 import json
@@ -7,7 +6,7 @@ from app.config import settings
 class GeminiService:
     def __init__(self):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_name = "gemini-3.5-flash-lite"
+        self.model_name = "gemini-2.5-flash"
 
     async def transcribe_pdf(self, pdf_bytes: bytes) -> dict:
         """
@@ -39,10 +38,11 @@ class GeminiService:
               {
                 "part_name": "品名・部品名",
                 "quantity": "数量・個数",
-                "category": "仕入区分・分類",
-                "amount": "金額"
+                "category": "仕入先・仕入区分・分類",
+                "amount": "単価または金額"
               }
             ],
+            "total_parts_amount": "使用部品代金合計 (各部品の金額×数量を合計した金額。数値またはカンマ付き数値など)",
             "other_notes": "上記項目以外の枠外メモ、特記事項、指示内容など、帳票内のすべての記載事項"
           }
         }
@@ -51,6 +51,7 @@ class GeminiService:
         - 日付（例: 2026年9月8日）は、見つかった表記通りに読み取ってください。
         - 工賃や出張費の時間表現（例: 1H30M）や走行距離（例: 10km）などの単位付き手書き文字も正確に抽出してください。
         - 略称や崩し文字（例: 「特自ン」→「特定自主点検」）は、文脈から正しい表記に補正して読み取ってください。
+        - 使用部品代金合計 (total_parts_amount) は、パーツリストの（金額 × 数量）を計算・集計して出力してください。明確な記載がある場合はその値を採用しても構いません。
         - 帳票内のすべての手書き文字・数字を漏らさず拾い上げてください。
         - 該当する記載がない項目は null または空文字にしてください。
         """
@@ -68,7 +69,6 @@ class GeminiService:
             )
         )
 
-        # 文字列として返ってきたJSONを辞書型にパースして返す
         return json.loads(response.text)
 
 gemini_service = GeminiService()
