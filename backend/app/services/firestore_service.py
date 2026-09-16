@@ -1,7 +1,7 @@
-# app/services/firestore_service.py
 from google.cloud import firestore
 from datetime import datetime, timezone
 import uuid
+import re
 
 
 class FirestoreService:
@@ -46,7 +46,8 @@ class FirestoreService:
 
     async def search_documents(self, search_params: dict) -> list:
         """
-        指定された複数のパラメータで AND（すべて一致）判定・部分一致検索・日付範囲指定を実施
+        指定された複数のパラメータで AND 判定（検索項目間）、部分一致検索、日付範囲指定を実施。
+        テキスト項目（機械名、部品名等）の内部は全角・半角スペース区切りで OR（いずれかに一致）判定。
         """
         docs = await self.db.collection("transcriptions").order_by(
             "created_at", direction=firestore.Query.DESCENDING
@@ -65,12 +66,11 @@ class FirestoreService:
             is_match = True
             doc_date = str(extracted.get("date") or "").strip()  # YYYY-MM-DD
 
-            # 指定された全ての条件で検証 (AND検索)
+            # 指定された全ての検索項目で検証 (項目間はAND検索)
             for key, target_val in search_params.items():
                 if not target_val:
                     continue
                 target_val_str = str(target_val).strip()
-                target_val_lower = target_val_str.lower()
 
                 # --- 日付の範囲指定チェック ---
                 if key == "start_date":
@@ -82,15 +82,19 @@ class FirestoreService:
                         is_match = False
                         break
 
-                # --- 使用部品名 (parts_list の配列内をチェック) ---
+                # --- 使用部品名 (parts_list の配列内をORチェック) ---
                 elif key == "part_name":
+                    # スペース（全角・半角）でキーワードを分割
+                    keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
                     parts_list = extracted.get("parts_list", [])
                     part_found = False
+                    
                     if isinstance(parts_list, list):
                         for part in parts_list:
                             if isinstance(part, dict):
                                 name = str(part.get("part_name") or "").lower()
-                                if target_val_lower in name:
+                                # いずれかのキーワードが含まれていればヒット(OR)
+                                if any(kw in name for kw in keywords):
                                     part_found = True
                                     break
                     if not part_found:
@@ -100,9 +104,18 @@ class FirestoreService:
                 # --- 通常のフィールド (date, customer, machine_name, management_no, repair_staff, repair_summary) ---
                 else:
                     field_val = str(extracted.get(key) or "").lower()
-                    if target_val_lower not in field_val:
-                        is_match = False
-                        break
+                    # 日付のピンポイント指定(date)以外はスペース区切りのOR判定を適用
+                    if key == "date":
+                        if target_val_str.lower() not in field_val:
+                            is_match = False
+                            break
+                    else:
+                        # スペース（全角・半角）でキーワードを分割
+                        keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
+                        # いずれかのキーワードが含まれているかチェック (OR検索)
+                        if not any(kw in field_val for kw in keywords):
+                            is_match = False
+                            break
 
             if is_match:
                 results.append(data)
