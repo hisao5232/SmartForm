@@ -3,9 +3,20 @@ from google.cloud import firestore
 from datetime import datetime, timezone
 import uuid
 
+
 class FirestoreService:
     def __init__(self):
         self.db = firestore.AsyncClient()
+
+    def _format_doc(self, doc_dict: dict) -> dict:
+        """
+        datetime オブジェクトを JSON シリアライズ可能な ISO 文字列に変換するヘルパー関数
+        """
+        if "created_at" in doc_dict and isinstance(doc_dict["created_at"], datetime):
+            doc_dict["created_at"] = doc_dict["created_at"].isoformat()
+        if "updated_at" in doc_dict and isinstance(doc_dict["updated_at"], datetime):
+            doc_dict["updated_at"] = doc_dict["updated_at"].isoformat()
+        return doc_dict
 
     async def save_transcription(self, filename: str, result_json: dict) -> str:
         """
@@ -31,19 +42,19 @@ class FirestoreService:
             "created_at", direction=firestore.Query.DESCENDING
         ).limit(limit)
         docs = await query.get()
-        return [doc.to_dict() for doc in docs]
+        return [self._format_doc(doc.to_dict()) for doc in docs]
 
     async def search_documents(self, search_params: dict) -> list:
         """
-        指定された複数のパラメータでAND（すべて一致）判定・部分一致検索を実施
+        指定された複数のパラメータで AND（すべて一致）判定・部分一致検索・日付範囲指定を実施
         """
         docs = await self.db.collection("transcriptions").order_by(
             "created_at", direction=firestore.Query.DESCENDING
         ).get()
-
+        
         results = []
         for doc in docs:
-            data = doc.to_dict()
+            data = self._format_doc(doc.to_dict())
             extracted = data.get("extracted_data", {})
             
             # 検索条件が指定されていない場合は全件返す
@@ -52,19 +63,33 @@ class FirestoreService:
                 continue
 
             is_match = True
+            doc_date = str(extracted.get("date") or "").strip()  # YYYY-MM-DD
 
             # 指定された全ての条件で検証 (AND検索)
             for key, target_val in search_params.items():
-                target_val_lower = target_val.lower()
+                if not target_val:
+                    continue
+                target_val_str = str(target_val).strip()
+                target_val_lower = target_val_str.lower()
 
-                # 使用部品名 (parts_list の配列内をチェック)
-                if key == "part_name":
+                # --- 日付の範囲指定チェック ---
+                if key == "start_date":
+                    if not doc_date or doc_date < target_val_str:
+                        is_match = False
+                        break
+                elif key == "end_date":
+                    if not doc_date or doc_date > target_val_str:
+                        is_match = False
+                        break
+
+                # --- 使用部品名 (parts_list の配列内をチェック) ---
+                elif key == "part_name":
                     parts_list = extracted.get("parts_list", [])
                     part_found = False
                     if isinstance(parts_list, list):
                         for part in parts_list:
                             if isinstance(part, dict):
-                                name = str(part.get("part_name", "")).lower()
+                                name = str(part.get("part_name") or "").lower()
                                 if target_val_lower in name:
                                     part_found = True
                                     break
@@ -72,9 +97,9 @@ class FirestoreService:
                         is_match = False
                         break
 
-                # 通常のフィールド (date, customer, machine_name, management_no, repair_staff, repair_summary)
+                # --- 通常のフィールド (date, customer, machine_name, management_no, repair_staff, repair_summary) ---
                 else:
-                    field_val = str(extracted.get(key, "")).lower()
+                    field_val = str(extracted.get(key) or "").lower()
                     if target_val_lower not in field_val:
                         is_match = False
                         break
@@ -86,13 +111,13 @@ class FirestoreService:
 
     async def update_document(self, doc_id: str, update_data: dict) -> bool:
         """
-        指定IDのドキュメントの内容（extracted_dataなど）を更新する
+        指定 IDのドキュメントの内容（extracted_dataなど）を更新する
         """
         doc_ref = self.db.collection("transcriptions").document(doc_id)
         doc = await doc_ref.get()
         if not doc.exists:
             return False
-
+        
         update_payload = {
             **update_data,
             "updated_at": datetime.now(timezone.utc)
@@ -102,14 +127,15 @@ class FirestoreService:
 
     async def delete_document(self, doc_id: str) -> bool:
         """
-        指定IDのドキュメントを削除する
+        指定 IDのドキュメントを削除する
         """
         doc_ref = self.db.collection("transcriptions").document(doc_id)
         doc = await doc_ref.get()
         if not doc.exists:
             return False
-
+        
         await doc_ref.delete()
         return True
+
 
 firestore_service = FirestoreService()
