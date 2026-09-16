@@ -81,12 +81,11 @@ export default function UploadPage() {
     setFiles([]);
   };
 
-  // 単一ファイルのアップロード処理関数（新: 非同期 /upload エンドポイント対応）
+  // 単一ファイルのアップロード処理関数（
   const uploadSingleFile = async (targetFile: File): Promise<ApiResponse> => {
     const formData = new FormData();
     formData.append('file', targetFile);
 
-    // 画像・PDFともに単一の /upload エンドポイントに送信
     const apiUrl = 'https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/upload';
 
     try {
@@ -99,7 +98,7 @@ export default function UploadPage() {
 
       return {
         statusCode: res.status,
-        statusText: res.statusText || (res.ok ? 'OK' : 'Error'),
+        statusText: res.statusText || (res.status === 202 ? 'Accepted' : 'OK'),
         data: res.ok ? data : null,
         error: res.ok ? undefined : data.detail || `${targetFile.name} のアップロードに失敗しました`,
       };
@@ -112,6 +111,37 @@ export default function UploadPage() {
       };
     }
   };
+
+  // 単一ファイルのアップロード処理関数（新: 非同期 /upload エンドポイント対応）
+  const uploadSingleFile = async (targetFile: File): Promise<ApiResponse> => {
+    const formData = new FormData();
+    formData.append('file', targetFile);
+
+    const apiUrl = 'https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/upload';
+
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      return {
+        statusCode: res.status,
+        statusText: res.statusText || (res.status === 202 ? 'Accepted' : 'OK'),
+        data: res.ok ? data : null,
+        error: res.ok ? undefined : data.detail || `${targetFile.name} のアップロードに失敗しました`,
+      };
+    } catch (err: any) {
+      return {
+        statusCode: 500,
+        statusText: 'Fetch Error',
+        data: null,
+        error: err.message || `${targetFile.name} の送信中にネットワークエラーが発生しました`,
+      };
+    }
+  }; 
 
   // 全ファイルの並列実行処理
   const handleUploadSubmit = async () => {

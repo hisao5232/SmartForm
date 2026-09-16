@@ -1,10 +1,13 @@
 'use client';
 
 export interface OCRResult {
-  id: string;
-  filename: string;
-  raw_text: string;
-  extracted_data: {
+  id?: string;
+  filename?: string;
+  message?: string;
+  task_id?: string;
+  status?: string;
+  raw_text?: string;
+  extracted_data?: {
     report_no?: string;
     receipt_no?: string;
     date?: string;
@@ -33,7 +36,7 @@ export interface OCRResult {
 export interface ApiResponse {
   statusCode: number;
   statusText: string;
-  data: OCRResult | null;
+  data: OCRResult | any | null;
   error?: string;
 }
 
@@ -53,7 +56,7 @@ export default function ApiLogViewer({ apiResponse }: ApiLogViewerProps) {
           </span>
           <span
             className={`rounded-full px-2.5 py-0.5 font-mono text-xs font-bold ${
-              statusCode === 200
+              statusCode >= 200 && statusCode < 300
                 ? 'border border-emerald-500/50 bg-emerald-900/80 text-emerald-300'
                 : 'border border-red-500/50 bg-red-900/80 text-red-300'
             }`}
@@ -80,18 +83,28 @@ export default function ApiLogViewer({ apiResponse }: ApiLogViewerProps) {
         <div className="mt-4 space-y-4">
           <div>
             <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-              Firestore Saved Data (extracted_data)
+              {data.extracted_data ? 'Firestore Saved Data (extracted_data)' : 'Response Info'}
             </h4>
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs sm:grid-cols-3">
-              <div><span className="text-slate-500">報告書No:</span> <span className="text-emerald-400">{data.extracted_data.report_no || '-'}</span></div>
-              <div><span className="text-slate-500">受品書No:</span> <span className="text-emerald-400">{data.extracted_data.receipt_no || '-'}</span></div>
-              <div><span className="text-slate-500">日付:</span> <span className="text-slate-200">{data.extracted_data.date || '-'}</span></div>
-              <div><span className="text-slate-500">得意先:</span> <span className="text-slate-200">{data.extracted_data.customer || '-'}</span></div>
-              <div><span className="text-slate-500">機械名:</span> <span className="font-bold text-amber-300">{data.extracted_data.machine_name || '-'}</span></div>
-              <div><span className="text-slate-500">管理番号:</span> <span className="text-slate-200">{data.extracted_data.management_no || '-'}</span></div>
-              <div><span className="text-slate-500">担当者:</span> <span className="text-slate-200">{data.extracted_data.repair_staff || '-'}</span></div>
-              <div className="col-span-2"><span className="text-slate-500">修理内容:</span> <span className="text-slate-200">{data.extracted_data.repair_summary || '-'}</span></div>
-            </div>
+
+            {data.extracted_data ? (
+              /* 同期処理時の抽出データ表示 */
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs sm:grid-cols-3">
+                <div><span className="text-slate-500">報告書No:</span> <span className="text-emerald-400">{data.extracted_data?.report_no || '-'}</span></div>
+                <div><span className="text-slate-500">受品書No:</span> <span className="text-emerald-400">{data.extracted_data?.receipt_no || '-'}</span></div>
+                <div><span className="text-slate-500">日付:</span> <span className="text-slate-200">{data.extracted_data?.date || '-'}</span></div>
+                <div><span className="text-slate-500">得意先:</span> <span className="text-slate-200">{data.extracted_data?.customer || '-'}</span></div>
+                <div><span className="text-slate-500">機械名:</span> <span className="font-bold text-amber-300">{data.extracted_data?.machine_name || '-'}</span></div>
+                <div><span className="text-slate-500">管理番号:</span> <span className="text-slate-200">{data.extracted_data?.management_no || '-'}</span></div>
+                <div><span className="text-slate-500">担当者:</span> <span className="text-slate-200">{data.extracted_data?.repair_staff || '-'}</span></div>
+                <div className="col-span-2"><span className="text-slate-500">修理内容:</span> <span className="text-slate-200">{data.extracted_data?.repair_summary || '-'}</span></div>
+              </div>
+            ) : (
+              /* 非同期/upload（202 Accepted）受諾メッセージ表示 */
+              <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-emerald-400">
+                <p>💡 {data?.message ?? 'アップロードを受け付けました（バックエンドで非同期処理中）'}</p>
+                {data?.task_id && <p className="mt-1 text-slate-400">Task ID: {data.task_id}</p>}
+              </div>
+            )}
           </div>
 
           <div>
