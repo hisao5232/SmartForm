@@ -40,6 +40,9 @@ interface DocumentCardProps {
 export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProps) {
   const ext = doc.extracted_data || {};
 
+  // タイトルの表示判定（receipt_no があれば「日報No: XXX」、無ければファイル名）
+  const cardTitle = ext.receipt_no ? `日報No: ${ext.receipt_no}` : doc.filename;
+
   const calculateTotalParts = (data?: ExtractedData) => {
     if (data?.total_parts_amount) return data.total_parts_amount;
     if (!data?.parts_list || !Array.isArray(data.parts_list)) return '-';
@@ -50,6 +53,7 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
     for (const part of data.parts_list) {
       const qty = parseFloat(String(part.quantity || '0').replace(/,/g, ''));
       const amt = parseFloat(String(part.amount || '0').replace(/,/g, ''));
+
       if (!isNaN(qty) && !isNaN(amt) && qty > 0 && amt > 0) {
         total += qty * amt;
         hasValidCalculation = true;
@@ -64,12 +68,15 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
       {/* ヘッダー */}
       <div className="flex justify-between items-start border-b border-slate-100 pb-3">
         <div>
-          <h3 className="text-lg font-bold text-slate-800">{doc.filename}</h3>
-          {doc.created_at && (
-            <p className="text-xs text-slate-400 mt-0.5">
-              作成日時 : {new Date(doc.created_at).toLocaleString('ja-JP')}
-            </p>
-          )}
+          <h3 className="text-lg font-bold text-slate-800">{cardTitle}</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {doc.filename}
+            {doc.created_at && (
+              <span className="ml-2">
+                • 作成日時: {new Date(doc.created_at).toLocaleString('ja-JP')}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2">
           <button
@@ -94,7 +101,7 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
           <span className="font-medium text-slate-800">{ext.date || '-'}</span>
         </div>
         <div>
-          <span className="text-xs text-slate-500 font-semibold block">修理受品書No</span>
+          <span className="text-xs text-slate-500 font-semibold block">修理受品書 No</span>
           <span className="font-medium text-slate-800">{ext.receipt_no || '-'}</span>
         </div>
         <div>

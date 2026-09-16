@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DocumentCard, { DocumentData } from '@/app/components/DocumentCard';
 import EditDocumentModal from '@/app/components/EditDocumentModal';
 import SearchForm, { SearchParams } from '@/app/components/SearchForm';
 
-// 1. 初期値に start_date と end_date を追加
 const initialSearchParams: SearchParams = {
   date: '',
   start_date: '',
@@ -26,12 +25,14 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingDoc, setEditingDoc] = useState<DocumentData | null>(null);
+  // 検索を実行したかどうかを判定するフラグ
+  const [hasSearched, setHasSearched] = useState(false);
 
   const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL ||
     'https://smartform-backend-416426508758.asia-northeast1.run.app';
 
-  // 一覧取得
+  // 一覧取得（条件なし検索時など）
   const fetchDocuments = async () => {
     setLoading(true);
     setError(null);
@@ -40,6 +41,7 @@ export default function SearchPage() {
       if (!res.ok) throw new Error('一覧の取得に失敗しました');
       const data = await res.json();
       setDocuments(data.documents || []);
+      setHasSearched(true);
     } catch (err: any) {
       setError(err.message || 'エラーが発生しました');
     } finally {
@@ -47,12 +49,10 @@ export default function SearchPage() {
     }
   };
 
-  // 検索処理 (複数クエリパラメータ対応)
+  // 検索処理
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // 値が入っているフィールドのみを取り出して URLSearchParams を構築
-    // （※ SearchForm側で不要なモードの値は空文字にクリアされるため自動除外されます）
+
     const queryParams = new URLSearchParams();
     Object.entries(searchParams).forEach(([key, value]) => {
       if (value.trim()) {
@@ -60,7 +60,7 @@ export default function SearchPage() {
       }
     });
 
-    // 何も入力されていない場合は一覧を取得
+    // 何も入力されていない場合は全件取得
     if (queryParams.toString() === '') {
       fetchDocuments();
       return;
@@ -75,6 +75,7 @@ export default function SearchPage() {
       if (!res.ok) throw new Error('検索に失敗しました');
       const data = await res.json();
       setDocuments(data.results || []);
+      setHasSearched(true);
     } catch (err: any) {
       setError(err.message || 'エラーが発生しました');
     } finally {
@@ -82,9 +83,13 @@ export default function SearchPage() {
     }
   };
 
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
+  // フォームリセット処理
+  const handleReset = () => {
+    setSearchParams(initialSearchParams);
+    setDocuments([]);
+    setHasSearched(false);
+    setError(null);
+  };
 
   // 更新保存処理
   const handleSaveEdit = async (docId: string, filename: string, extracted_data: any) => {
@@ -145,14 +150,20 @@ export default function SearchPage() {
             searchParams={searchParams}
             setSearchParams={setSearchParams}
             onSearch={handleSearch}
-            onReset={() => {
-              setSearchParams(initialSearchParams);
-              fetchDocuments();
-            }}
+            onReset={handleReset}
           />
 
+          {/* 検索実行後の件数表示エリア */}
+          {hasSearched && !loading && !error && (
+            <div className="mt-6 mb-4 flex items-center justify-between border-t border-slate-100 pt-4">
+              <span className="text-sm font-medium text-slate-600">
+                検索結果: <span className="text-base font-bold text-blue-600">{documents.length}</span> 件
+              </span>
+            </div>
+          )}
+
           {error && (
-            <div className="p-4 mb-4 text-red-700 bg-red-50 border border-red-200 rounded-lg">
+            <div className="mt-4 p-4 mb-4 text-red-700 bg-red-50 border border-red-200 rounded-lg">
               {error}
             </div>
           )}
@@ -161,9 +172,13 @@ export default function SearchPage() {
             <div className="text-center py-12 text-slate-500">読み込み中 ...</div>
           ) : (
             <div className="space-y-4">
-              {documents.length === 0 ? (
+              {!hasSearched ? (
+                <div className="text-center py-12 text-slate-400 border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                  検索条件を入力して「検索」ボタンを押してください
+                </div>
+              ) : documents.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 border border-dashed border-slate-200 rounded-lg">
-                  データが見つかりませんでした
+                  該当するデータが見つかりませんでした
                 </div>
               ) : (
                 documents.map((doc) => (
