@@ -27,6 +27,7 @@ class FirestoreService:
         data = {
             "id": doc_id,
             "filename": filename,
+            "status": "completed",  # <-- 追加: "processing" | "completed" | "failed" などのステータス管理
             "raw_text": result_json.get("raw_text", ""),
             "extracted_data": result_json.get("extracted_data", {}),
             "created_at": datetime.now(timezone.utc)

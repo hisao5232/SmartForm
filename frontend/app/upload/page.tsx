@@ -18,7 +18,7 @@ export default function UploadPage() {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
+  const [apiResponse, setApiResponse] = useState<ApiResponse | ApiResponse[] | null>(null);
 
   const router = useRouter();
 
@@ -29,6 +29,17 @@ export default function UploadPage() {
       setIsAuthenticated(true);
     }
   }, [router]);
+
+  // オブジェクトURLのクリーンアップ
+  useEffect(() => {
+    return () => {
+      files.forEach((file) => {
+        if (file.previewUrl) {
+          URL.revokeObjectURL(file.previewUrl);
+        }
+      });
+    };
+  }, [files]);
 
   const processFiles = (incomingFiles: FileList | File[]) => {
     const validExtensions = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -61,19 +72,22 @@ export default function UploadPage() {
     });
   };
 
-  const handleUploadSubmit = async () => {
-    if (files.length === 0) return;
+  const handleClearAllFiles = () => {
+    files.forEach((f) => {
+      if (f.previewUrl) {
+        URL.revokeObjectURL(f.previewUrl);
+      }
+    });
+    setFiles([]);
+  };
 
-    setIsUploading(true);
-    setApiResponse(null);
-
-    const targetFile = files[0].file;
+  // 単一ファイルのアップロード処理関数（新: 非同期 /upload エンドポイント対応）
+  const uploadSingleFile = async (targetFile: File): Promise<ApiResponse> => {
     const formData = new FormData();
     formData.append('file', targetFile);
 
-    const isPdf = targetFile.type === 'application/pdf' || targetFile.name.endsWith('.pdf');
-    const endpoint = isPdf ? 'transcribe-pdf' : 'transcribe-image';
-    const apiUrl = `https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/${endpoint}`;
+    // 画像・PDFともに単一の /upload エンドポイントに送信
+    const apiUrl = 'https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/upload';
 
     try {
       const res = await fetch(apiUrl, {
@@ -83,19 +97,49 @@ export default function UploadPage() {
 
       const data = await res.json();
 
-      setApiResponse({
+      return {
         statusCode: res.status,
         statusText: res.statusText || (res.ok ? 'OK' : 'Error'),
         data: res.ok ? data : null,
-        error: res.ok ? undefined : data.detail || 'OCR処理に失敗しました',
-      });
+        error: res.ok ? undefined : data.detail || `${targetFile.name} のアップロードに失敗しました`,
+      };
     } catch (err: any) {
-      setApiResponse({
+      return {
         statusCode: 500,
         statusText: 'Fetch Error',
         data: null,
-        error: err.message || 'ネットワークエラーが発生しました',
+        error: err.message || `${targetFile.name} の送信中にネットワークエラーが発生しました`,
+      };
+    }
+  };
+
+  // 全ファイルの並列実行処理
+  const handleUploadSubmit = async () => {
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    setApiResponse(null);
+
+    try {
+      // Promise.allSettled を使用することで一部のファイルがエラーになっても他を中断させない
+      const uploadPromises = files.map((item) => uploadSingleFile(item.file));
+      const results = await Promise.allSettled(uploadPromises);
+
+      const responses: ApiResponse[] = results.map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        } else {
+          return {
+            statusCode: 500,
+            statusText: 'Unhandled Error',
+            data: null,
+            error: `${files[index].file.name} の処理で予期せぬエラーが発生しました`,
+          };
+        }
       });
+
+      // 単一ファイルの場合はオブジェクト、複数の場合は配列をセット（または常に配列形式に統一）
+      setApiResponse(responses.length === 1 ? responses[0] : responses);
     } finally {
       setIsUploading(false);
     }
@@ -135,7 +179,7 @@ export default function UploadPage() {
                   選択中のファイル ({files.length}件)
                 </h3>
                 <button
-                  onClick={() => setFiles([])}
+                  onClick={handleClearAllFiles}
                   disabled={isUploading}
                   className="text-xs text-red-600 hover:underline disabled:opacity-50"
                 >
@@ -193,10 +237,10 @@ export default function UploadPage() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      <span>OCR解析実行中...</span>
+                      <span>OCR解析実行中 ({files.length}件)...</span>
                     </>
                   ) : (
-                    <span>OCR解析を実行する</span>
+                    <span>OCR解析を実行する ({files.length}件)</span>
                   )}
                 </button>
               </div>
@@ -204,7 +248,15 @@ export default function UploadPage() {
           )}
         </div>
 
-        {apiResponse && <ApiLogViewer apiResponse={apiResponse} />}
+        {apiResponse && (
+          Array.isArray(apiResponse) ? (
+            apiResponse.map((res, idx) => (
+              <ApiLogViewer key={idx} apiResponse={res} />
+            ))
+          ) : (
+            <ApiLogViewer apiResponse={apiResponse} />
+          )
+        )}
       </main>
     </div>
   );

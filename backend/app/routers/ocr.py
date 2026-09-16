@@ -1,10 +1,13 @@
-# app/routers/ocr.py
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, status
 from app.services.gemini_service import gemini_service
 from app.services.firestore_service import firestore_service
+from app.services.gcs_service import gcs_service
+from app.services.tasks_service import tasks_service
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
+import uuid
+import logging
 
 router = APIRouter()
 
@@ -13,39 +16,88 @@ class UpdateDocumentRequest(BaseModel):
     extracted_data: Optional[Dict[str, Any]] = None
     filename: Optional[str] = None
 
+# Cloud Tasks ペイロード用データ構造
+class TaskPayload(BaseModel):
+    gcs_uri: str
+    filename: str
+    task_id: str
 
-@router.post("/transcribe-pdf")
-async def transcribe_pdf(file: UploadFile = File(...)):
+
+# --- 1. 非同期受付エンドポイント（フロントエンドから呼び出し） ---
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
+async def upload_pdf(file: UploadFile = File(...)):
+    """
+    PDFをGCSに一時保存し、Cloud Tasksにタスクを投入して即座に完了レスポンスを返す
+    """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDFファイルを選択してください。")
-    
-    pdf_bytes = await file.read()
-    
-    # Geminiによる解析・構造化
-    result_json = await gemini_service.transcribe_pdf(pdf_bytes)
-    
-    # 日付フィールドのISO 8601形式（YYYY-MM-DD）の確認・変換ガード
-    extracted_data = result_json.get("extracted_data", {})
-    if extracted_data and extracted_data.get("date"):
-        raw_date = extracted_data["date"]
-        try:
-            # YYYY-MM-DD 形式として解釈可能かチェック
-            valid_date = datetime.strptime(raw_date, "%Y-%m-%d").date().isoformat()
-            extracted_data["date"] = valid_date
-        except (ValueError, TypeError):
-            # 万が一フォーマットが崩れていた場合、nullにするかそのまま保持する等の安全処置
-            pass
 
-    # Firestoreへ保存
-    doc_id = await firestore_service.save_transcription(file.filename, result_json)
-    
-    return {
-        "id": doc_id,
-        "filename": file.filename,
-        "raw_text": result_json.get("raw_text"),
-        "extracted_data": extracted_data
-    }
+    try:
+        # 1. 一時保存用のタスクIDとファイル名を生成
+        task_id = str(uuid.uuid4())
+        blob_name = f"temp/{task_id}_{file.filename}"
 
+        # 2. GCS へ PDF を一時保存
+        pdf_bytes = await file.read()
+        gcs_uri = await gcs_service.upload_bytes(pdf_bytes, blob_name)
+
+        # 3. Cloud Tasks へ処理キューを追加
+        await tasks_service.create_ocr_task(gcs_uri=gcs_uri, filename=file.filename, task_id=task_id)
+
+        # 4. フロントへ即時レスポンス（202 Accepted）
+        return {
+            "status": "accepted",
+            "message": "PDFのアップロードが完了しました。バックグラウンドで解析処理中です。",
+            "task_id": task_id,
+            "filename": file.filename
+        }
+    except Exception as e:
+        logging.error(f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"ファイル受領処理に失敗しました: {str(e)}")
+
+
+# --- 2. バックグラウンドワーカーエンドポイント（Cloud Tasks から呼び出し） ---
+@router.post("/process-task")
+async def process_ocr_task(payload: TaskPayload):
+    """
+    Cloud Tasks から実行されるバックグラウンド処理。
+    GCSからPDFを取得し、Geminiで解析してFirestoreに保存する。
+    """
+    try:
+        # 1. GCS から PDF バイトデータをダウンロード
+        pdf_bytes = await gcs_service.download_bytes(payload.gcs_uri)
+
+        # 2. Gemini による解析・構造化
+        result_json = await gemini_service.transcribe_pdf(pdf_bytes)
+
+        # 3. 日付フィールドのISO 8601形式（YYYY-MM-DD）の確認・変換ガード
+        extracted_data = result_json.get("extracted_data", {})
+        if extracted_data and extracted_data.get("date"):
+            raw_date = extracted_data["date"]
+            try:
+                valid_date = datetime.strptime(str(raw_date), "%Y-%m-%d").date().isoformat()
+                extracted_data["date"] = valid_date
+            except (ValueError, TypeError):
+                pass
+
+        # 4. Firestore へ保存
+        doc_id = await firestore_service.save_transcription(payload.filename, result_json)
+
+        # 5. 一時保存した GCS ファイルの削除（クリーンアップ）
+        await gcs_service.delete_file(payload.gcs_uri)
+
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "filename": payload.filename
+        }
+    except Exception as e:
+        logging.error(f"Task processing failed for {payload.filename}: {str(e)}")
+        # 500エラーを返すと Cloud Tasks が自動でリトライを実施します
+        raise HTTPException(status_code=500, detail=f"OCR解析・保存処理に失敗しました: {str(e)}")
+
+
+# --- 既存のエンドポイント（変更なし） ---
 
 @router.get("/documents")
 async def get_documents(limit: int = Query(20, ge=1, le=100)):
@@ -54,6 +106,7 @@ async def get_documents(limit: int = Query(20, ge=1, le=100)):
         return {"documents": docs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/search")
 async def search_documents(
@@ -80,28 +133,21 @@ async def search_documents(
             "part_name": part_name,
         }
         
-        # 安全に str() へ変換してから strip() 処理（None や空文字は除外）
         active_params = {
             k: str(v).strip() 
             for k, v in search_params.items() 
             if v is not None and str(v).strip() != ""
         }
         
-        # フィルタリング済みの active_params を渡す
         results = await firestore_service.search_documents(search_params=active_params)
         return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 更新エンドポイント ---
+
 @router.put("/documents/{doc_id}")
 async def update_document(doc_id: str, payload: UpdateDocumentRequest):
-    """
-    PUT /api/v1/ocr/documents/{doc_id}
-    指定された ID のドキュメントデータを更新する
-    """
     try:
-        # Pydantic v2 対応 (v1 の dict() から model_dump() に変更)
         update_data = payload.model_dump(exclude_unset=True)
         if not update_data:
             raise HTTPException(status_code=400, detail="更新対象のデータがありません")
@@ -116,13 +162,8 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- 削除エンドポイント ---
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str):
-    """
-    DELETE /api/v1/ocr/documents/{doc_id}
-    指定された ID のドキュメントを削除する
-    """
     try:
         success = await firestore_service.delete_document(doc_id)
         if not success:
@@ -132,3 +173,4 @@ async def delete_document(doc_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        

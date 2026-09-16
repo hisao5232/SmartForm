@@ -4,3 +4,5 @@ pydantic-settings
 google-genai
 python-multipart
 google-cloud-firestore
+google-cloud-storage
+google-cloud-tasks
