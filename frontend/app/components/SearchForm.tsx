@@ -1,7 +1,11 @@
 'use client';
 
+import { useState } from 'react';
+
 export interface SearchParams {
   date: string;
+  start_date: string;
+  end_date: string;
   customer: string;
   machine_name: string;
   management_no: string;
@@ -23,6 +27,11 @@ export default function SearchForm({
   onSearch,
   onReset,
 }: SearchFormProps) {
+  // 日付検索モードのステート ('single': ピンポイント, 'range': 期間指定)
+  const [dateMode, setDateMode] = useState<'single' | 'range'>(
+    searchParams.start_date || searchParams.end_date ? 'range' : 'single'
+  );
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setSearchParams((prev) => ({
@@ -31,22 +40,78 @@ export default function SearchForm({
     }));
   };
 
+  // 日付モード切り替えハンドラ
+  const handleModeChange = (mode: 'single' | 'range') => {
+    setDateMode(mode);
+    if (mode === 'single') {
+      // 期間指定パラメータをクリア
+      setSearchParams((prev) => ({ ...prev, start_date: '', end_date: '' }));
+    } else {
+      // ピンポイントパラメータをクリア
+      setSearchParams((prev) => ({ ...prev, date: '' }));
+    }
+  };
+
   // いずれかの項目に入力があるかチェック
   const hasInput = Object.values(searchParams).some((val) => val.trim() !== '');
 
   return (
     <form onSubmit={onSearch} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">日付</label>
-          <input
-            type="text"
-            name="date"
-            placeholder="例: 2026-09-08"
-            value={searchParams.date}
-            onChange={handleChange}
-            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
+        
+        {/* 日付検索エリア (モード切り替え付き) */}
+        <div className="md:col-span-2 lg:col-span-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold text-slate-700">日付検索</label>
+            <div className="flex bg-slate-200 p-0.5 rounded-md text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => handleModeChange('single')}
+                className={`px-2 py-0.5 rounded ${
+                  dateMode === 'single' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                指定日
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('range')}
+                className={`px-2 py-0.5 rounded ${
+                  dateMode === 'range' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                期間指定
+              </button>
+            </div>
+          </div>
+
+          {dateMode === 'single' ? (
+            <input
+              type="date"
+              name="date"
+              value={searchParams.date}
+              onChange={handleChange}
+              className="w-full p-2 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                name="start_date"
+                value={searchParams.start_date}
+                onChange={handleChange}
+                className="w-full p-2 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              <span className="text-slate-400 text-xs font-bold">〜</span>
+              <input
+                type="date"
+                name="end_date"
+                value={searchParams.end_date}
+                onChange={handleChange}
+                className="w-full p-2 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          )}
         </div>
 
         <div>
@@ -54,7 +119,7 @@ export default function SearchForm({
           <input
             type="text"
             name="customer"
-            placeholder="得意先名で検索..."
+            placeholder="得意先名で検索 ..."
             value={searchParams.customer}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -66,7 +131,7 @@ export default function SearchForm({
           <input
             type="text"
             name="machine_name"
-            placeholder="例: RX306"
+            placeholder="例 : RX306"
             value={searchParams.machine_name}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -78,7 +143,7 @@ export default function SearchForm({
           <input
             type="text"
             name="management_no"
-            placeholder="管理番号で検索..."
+            placeholder="管理番号で検索 ..."
             value={searchParams.management_no}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -90,7 +155,7 @@ export default function SearchForm({
           <input
             type="text"
             name="repair_staff"
-            placeholder="担当者名で検索..."
+            placeholder="担当者名で検索 ..."
             value={searchParams.repair_staff}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -102,7 +167,7 @@ export default function SearchForm({
           <input
             type="text"
             name="repair_summary"
-            placeholder="例: 特定自主点検"
+            placeholder="例 : 特定自主点検"
             value={searchParams.repair_summary}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -114,7 +179,7 @@ export default function SearchForm({
           <input
             type="text"
             name="part_name"
-            placeholder="品名・部品名で検索..."
+            placeholder="品名・部品名で検索 ..."
             value={searchParams.part_name}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"

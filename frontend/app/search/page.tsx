@@ -6,8 +6,11 @@ import DocumentCard, { DocumentData } from '@/app/components/DocumentCard';
 import EditDocumentModal from '@/app/components/EditDocumentModal';
 import SearchForm, { SearchParams } from '@/app/components/SearchForm';
 
+// 1. 初期値に start_date と end_date を追加
 const initialSearchParams: SearchParams = {
   date: '',
+  start_date: '',
+  end_date: '',
   customer: '',
   machine_name: '',
   management_no: '',
@@ -22,7 +25,6 @@ export default function SearchPage() {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [editingDoc, setEditingDoc] = useState<DocumentData | null>(null);
 
   const API_BASE_URL =
@@ -48,8 +50,9 @@ export default function SearchPage() {
   // 検索処理 (複数クエリパラメータ対応)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // 入力があるフィールドのみを取り出して URLSearchParams を構築
+    
+    // 値が入っているフィールドのみを取り出して URLSearchParams を構築
+    // （※ SearchForm側で不要なモードの値は空文字にクリアされるため自動除外されます）
     const queryParams = new URLSearchParams();
     Object.entries(searchParams).forEach(([key, value]) => {
       if (value.trim()) {
@@ -90,9 +93,7 @@ export default function SearchPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename, extracted_data }),
     });
-
     if (!res.ok) throw new Error('更新に失敗しました');
-
     setDocuments((prev) =>
       prev.map((doc) =>
         doc.id === docId ? { ...doc, filename, extracted_data } : doc
@@ -140,7 +141,6 @@ export default function SearchPage() {
           <h2 className="text-xl font-bold text-slate-800 mb-4">
             🔍 ドキュメント検索・管理
           </h2>
-
           <SearchForm
             searchParams={searchParams}
             setSearchParams={setSearchParams}
