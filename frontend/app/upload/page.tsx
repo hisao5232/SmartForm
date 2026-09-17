@@ -19,7 +19,6 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [apiResponse, setApiResponse] = useState<ApiResponse | ApiResponse[] | null>(null);
-
   const router = useRouter();
 
   useEffect(() => {
@@ -30,7 +29,7 @@ export default function UploadPage() {
     }
   }, [router]);
 
-  // オブジェクトURLのクリーンアップ
+  // オブジェクトURLのクリーンアップ（アンマウント時）
   useEffect(() => {
     return () => {
       files.forEach((file) => {
@@ -50,7 +49,6 @@ export default function UploadPage() {
       if (!validExtensions.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|webp|pdf)$/i)) {
         return;
       }
-
       const isImage = file.type.startsWith('image/');
       newUploadFiles.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -81,11 +79,10 @@ export default function UploadPage() {
     setFiles([]);
   };
 
-  // 単一ファイルのアップロード処理関数（
+  // 単一ファイルのアップロード処理関数
   const uploadSingleFile = async (targetFile: File): Promise<ApiResponse> => {
     const formData = new FormData();
     formData.append('file', targetFile);
-
     const apiUrl = 'https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/upload';
 
     try {
@@ -93,68 +90,33 @@ export default function UploadPage() {
         method: 'POST',
         body: formData,
       });
-
       const data = await res.json();
-
       return {
         statusCode: res.status,
         statusText: res.statusText || (res.status === 202 ? 'Accepted' : 'OK'),
         data: res.ok ? data : null,
         error: res.ok ? undefined : data.detail || `${targetFile.name} のアップロードに失敗しました`,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : `${targetFile.name} の送信中にネットワークエラーが発生しました`;
       return {
         statusCode: 500,
         statusText: 'Fetch Error',
         data: null,
-        error: err.message || `${targetFile.name} の送信中にネットワークエラーが発生しました`,
+        error: errorMessage,
       };
     }
   };
 
-  // 単一ファイルのアップロード処理関数（新: 非同期 /upload エンドポイント対応）
-  const uploadSingleFile = async (targetFile: File): Promise<ApiResponse> => {
-    const formData = new FormData();
-    formData.append('file', targetFile);
-
-    const apiUrl = 'https://smartform-backend-416426508758.asia-northeast1.run.app/api/v1/ocr/upload';
-
-    try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      return {
-        statusCode: res.status,
-        statusText: res.statusText || (res.status === 202 ? 'Accepted' : 'OK'),
-        data: res.ok ? data : null,
-        error: res.ok ? undefined : data.detail || `${targetFile.name} のアップロードに失敗しました`,
-      };
-    } catch (err: any) {
-      return {
-        statusCode: 500,
-        statusText: 'Fetch Error',
-        data: null,
-        error: err.message || `${targetFile.name} の送信中にネットワークエラーが発生しました`,
-      };
-    }
-  }; 
-
   // 全ファイルの並列実行処理
   const handleUploadSubmit = async () => {
     if (files.length === 0) return;
-
     setIsUploading(true);
     setApiResponse(null);
 
     try {
-      // Promise.allSettled を使用することで一部のファイルがエラーになっても他を中断させない
       const uploadPromises = files.map((item) => uploadSingleFile(item.file));
       const results = await Promise.allSettled(uploadPromises);
-
       const responses: ApiResponse[] = results.map((result, index) => {
         if (result.status === 'fulfilled') {
           return result.value;
@@ -168,7 +130,6 @@ export default function UploadPage() {
         }
       });
 
-      // 単一ファイルの場合はオブジェクト、複数の場合は配列をセット（または常に配列形式に統一）
       setApiResponse(responses.length === 1 ? responses[0] : responses);
     } finally {
       setIsUploading(false);
@@ -186,7 +147,6 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Header currentPageLabel="アップロード" />
-
       <main className="mx-auto max-w-5xl space-y-6 p-6">
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-800">
@@ -195,13 +155,11 @@ export default function UploadPage() {
           <p className="mt-1 text-sm text-slate-500">
             手書き報告書の画像（JPG, PNG, WebP）またはPDFファイルを選択・ドラッグ＆ドロップしてください。
           </p>
-
           <Dropzone
             onFilesSelected={processFiles}
             isDragging={isDragging}
             setIsDragging={setIsDragging}
           />
-
           {files.length > 0 && (
             <div className="mt-8">
               <div className="flex items-center justify-between border-b pb-2">
@@ -216,7 +174,6 @@ export default function UploadPage() {
                   すべて削除
                 </button>
               </div>
-
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
                 {files.map((item) => (
                   <div
@@ -234,7 +191,6 @@ export default function UploadPage() {
                         PDF
                       </div>
                     )}
-
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium text-slate-800">
                         {item.file.name}
@@ -243,7 +199,6 @@ export default function UploadPage() {
                         {(item.file.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
-
                     <button
                       onClick={() => handleRemoveFile(item.id)}
                       disabled={isUploading}
@@ -254,7 +209,6 @@ export default function UploadPage() {
                   </div>
                 ))}
               </div>
-
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleUploadSubmit}
@@ -277,7 +231,6 @@ export default function UploadPage() {
             </div>
           )}
         </div>
-
         {apiResponse && (
           Array.isArray(apiResponse) ? (
             apiResponse.map((res, idx) => (
