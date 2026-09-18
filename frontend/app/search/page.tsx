@@ -16,6 +16,7 @@ const initialSearchParams: SearchParams = {
   repair_staff: '',
   repair_summary: '',
   part_name: '',
+  status: '',  // '', 'completed', 'failed' のいずれか
 };
 
 export default function SearchPage() {
@@ -72,6 +73,25 @@ export default function SearchPage() {
       const res = await fetch(
         `${API_BASE_URL}/api/v1/ocr/search?${queryParams.toString()}`
       );
+      if (!res.ok) throw new Error('検索に失敗しました');
+      const data = await res.json();
+      setDocuments(data.results || []);
+      setHasSearched(true);
+    } catch (err: any) {
+      setError(err.message || 'エラーが発生しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 「失敗のみ表示」ショートカット処理（新規追加）
+  const fetchFailedOnly = async () => {
+    setLoading(true);
+    setError(null);
+    // 検索フォームの表示も「failed」で絞り込んだ状態に同期させる
+    setSearchParams({ ...initialSearchParams, status: 'failed' });
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/ocr/search?status=failed`);
       if (!res.ok) throw new Error('検索に失敗しました');
       const data = await res.json();
       setDocuments(data.results || []);
@@ -143,9 +163,22 @@ export default function SearchPage() {
       {/* メインコンテンツ */}
       <main className="mx-auto max-w-6xl p-6">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
-          <h2 className="text-xl font-bold text-slate-800 mb-4">
-            🔍 ドキュメント検索・管理
-          </h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-800">
+              🔍 ドキュメント検索・管理
+            </h2>
+
+            {/* 新規追加: 失敗タスクへのショートカットボタン */}
+            <button
+              type="button"
+              onClick={fetchFailedOnly}
+              disabled={loading}
+              className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+            >
+              ⚠️ 失敗したレポートのみ表示
+            </button>
+          </div>
+
           <SearchForm
             searchParams={searchParams}
             setSearchParams={setSearchParams}
@@ -206,3 +239,4 @@ export default function SearchPage() {
     </div>
   );
 }
+

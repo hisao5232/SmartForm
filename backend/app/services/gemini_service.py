@@ -69,15 +69,32 @@ class GeminiService:
             mime_type="application/pdf"
         )
         
-        response = await self.client.aio.models.generate_content(
-            model=self.model_name,
-            contents=[pdf_part, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=OCRReportResponse,  # 構造化出力を厳格に強制
-                temperature=0.1  # 読み取り精度を高めるため温度を低めに設定
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=[pdf_part, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=OCRReportResponse,
+                    temperature=0.1
+                )
             )
-        )
-        return json.loads(response.text)
+        except genai_errors.ClientError as e:
+            # 実測確認済み: 404(モデル未存在)/429(レート制限)はどちらもClientError
+            if e.code == 429:
+                # レート制限は時間を置けば直る → リトライさせる
+                raise TransientError(f"レート制限に達しました (code={e.code}): {e.message}") from e
+            # 404, 401, 403 など、その他のクライアントエラーは直らない → リトライさせない
+            raise PermanentError(f"Geminiへのリクエストが拒否されました (code={e.code}): {e.message}") from e
+        except genai_errors.ServerError as e:
+            # 5xx系: Gemini側の一時的な障害 → リトライさせる
+            raise TransientError(f"Gemini側で一時的なエラーが発生しました (code={e.code}): {e.message}") from e
+        except (TimeoutError, ConnectionError) as e:
+            raise TransientError(f"接続エラー: {e}") from e
+
+        try:
+            return json.loads(response.text)
+        except (json.JSONDecodeError, AttributeError) as e:
+            raise PermanentError(f"Geminiの応答をJSONとして解釈できませんでした: {e}") from e
 
 gemini_service = GeminiService()

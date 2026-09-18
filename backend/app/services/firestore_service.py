@@ -27,9 +27,29 @@ class FirestoreService:
         data = {
             "id": doc_id,
             "filename": filename,
-            "status": "completed",  # <-- 追加: "processing" | "completed" | "failed" などのステータス管理
+            "status": "completed",
             "raw_text": result_json.get("raw_text", ""),
             "extracted_data": result_json.get("extracted_data", {}),
+            "created_at": datetime.now(timezone.utc)
+        }
+        await doc_ref.set(data)
+        return doc_id
+
+    async def save_failed_task(self, filename: str, error: str, gcs_uri: str = "") -> str:
+        """
+        恒久的エラー（PermanentError）で処理が完了できなかったタスクを記録する。
+        Cloud Tasksへのリトライを止める代わりに、失敗内容を追跡できるようにするための保存先。
+        """
+        doc_id = str(uuid.uuid4())
+        doc_ref = self.db.collection("transcriptions").document(doc_id)
+        data = {
+            "id": doc_id,
+            "filename": filename,
+            "status": "failed",
+            "error": error,
+            "gcs_uri": gcs_uri,
+            "raw_text": "",
+            "extracted_data": {},
             "created_at": datetime.now(timezone.utc)
         }
         await doc_ref.set(data)
@@ -49,32 +69,33 @@ class FirestoreService:
         """
         指定された複数のパラメータで AND 判定（検索項目間）、部分一致検索、日付範囲指定を実施。
         テキスト項目（機械名、部品名等）の内部は全角・半角スペース区切りで OR（いずれかに一致）判定。
+        status を指定した場合、完全一致でそのステータス（completed / failed）のみに絞り込む。
         """
         docs = await self.db.collection("transcriptions").order_by(
             "created_at", direction=firestore.Query.DESCENDING
         ).get()
-        
         results = []
         for doc in docs:
             data = self._format_doc(doc.to_dict())
             extracted = data.get("extracted_data", {})
-            
-            # 検索条件が指定されていない場合は全件返す
             if not search_params:
                 results.append(data)
                 continue
-
             is_match = True
-            doc_date = str(extracted.get("date") or "").strip()  # YYYY-MM-DD
-
-            # 指定された全ての検索項目で検証 (項目間はAND検索)
+            doc_date = str(extracted.get("date") or "").strip()
             for key, target_val in search_params.items():
                 if not target_val:
                     continue
                 target_val_str = str(target_val).strip()
 
-                # --- 日付の範囲指定チェック ---
-                if key == "start_date":
+                # --- status フィルタ（新規追加） ---
+                # extracted_data 内ではなく、ドキュメント直下の status フィールドを見る
+                if key == "status":
+                    if str(data.get("status") or "") != target_val_str:
+                        is_match = False
+                        break
+
+                elif key == "start_date":
                     if not doc_date or doc_date < target_val_str:
                         is_match = False
                         break
@@ -82,45 +103,33 @@ class FirestoreService:
                     if not doc_date or doc_date > target_val_str:
                         is_match = False
                         break
-
-                # --- 使用部品名 (parts_list の配列内をORチェック) ---
                 elif key == "part_name":
-                    # スペース（全角・半角）でキーワードを分割
                     keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
                     parts_list = extracted.get("parts_list", [])
                     part_found = False
-                    
                     if isinstance(parts_list, list):
                         for part in parts_list:
                             if isinstance(part, dict):
                                 name = str(part.get("part_name") or "").lower()
-                                # いずれかのキーワードが含まれていればヒット(OR)
                                 if any(kw in name for kw in keywords):
                                     part_found = True
                                     break
                     if not part_found:
                         is_match = False
                         break
-
-                # --- 通常のフィールド (date, customer, machine_name, management_no, repair_staff, repair_summary) ---
                 else:
                     field_val = str(extracted.get(key) or "").lower()
-                    # 日付のピンポイント指定(date)以外はスペース区切りのOR判定を適用
                     if key == "date":
                         if target_val_str.lower() not in field_val:
                             is_match = False
                             break
                     else:
-                        # スペース（全角・半角）でキーワードを分割
                         keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
-                        # いずれかのキーワードが含まれているかチェック (OR検索)
                         if not any(kw in field_val for kw in keywords):
                             is_match = False
                             break
-
             if is_match:
                 results.append(data)
-
         return results
 
     async def update_document(self, doc_id: str, update_data: dict) -> bool:
@@ -131,7 +140,7 @@ class FirestoreService:
         doc = await doc_ref.get()
         if not doc.exists:
             return False
-        
+
         update_payload = {
             **update_data,
             "updated_at": datetime.now(timezone.utc)
@@ -147,7 +156,7 @@ class FirestoreService:
         doc = await doc_ref.get()
         if not doc.exists:
             return False
-        
+
         await doc_ref.delete()
         return True
 

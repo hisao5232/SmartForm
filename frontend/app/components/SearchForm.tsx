@@ -12,6 +12,7 @@ export interface SearchParams {
   repair_staff: string;
   repair_summary: string;
   part_name: string;
+  status: string;  // ← 追加（'', 'completed', 'failed' のいずれか）
 }
 
 interface SearchFormProps {
@@ -32,7 +33,9 @@ export default function SearchForm({
     searchParams.start_date || searchParams.end_date ? 'range' : 'single'
   );
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>  // ← select にも対応させるため型を拡張
+  ) => {
     const { name, value } = e.target;
     setSearchParams((prev) => ({
       ...prev,
@@ -44,10 +47,8 @@ export default function SearchForm({
   const handleModeChange = (mode: 'single' | 'range') => {
     setDateMode(mode);
     if (mode === 'single') {
-      // 期間指定パラメータをクリア
       setSearchParams((prev) => ({ ...prev, start_date: '', end_date: '' }));
     } else {
-      // ピンポイントパラメータをクリア
       setSearchParams((prev) => ({ ...prev, date: '' }));
     }
   };
@@ -58,7 +59,6 @@ export default function SearchForm({
   return (
     <form onSubmit={onSearch} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-        
         {/* 日付検索エリア (モード切り替え付き) */}
         <div className="md:col-span-2 lg:col-span-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
           <div className="flex items-center justify-between mb-2">
@@ -84,7 +84,6 @@ export default function SearchForm({
               </button>
             </div>
           </div>
-
           {dateMode === 'single' ? (
             <input
               type="date"
@@ -125,7 +124,6 @@ export default function SearchForm({
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
-
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">機械名</label>
           <input
@@ -137,7 +135,6 @@ export default function SearchForm({
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
-
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">管理番号</label>
           <input
@@ -149,7 +146,6 @@ export default function SearchForm({
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
-
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">修理担当者名</label>
           <input
@@ -161,7 +157,6 @@ export default function SearchForm({
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
-
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">作業内容 (修理概要)</label>
           <input
@@ -172,6 +167,21 @@ export default function SearchForm({
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
+        </div>
+
+        {/* 新規追加: 処理ステータス絞り込み */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">処理ステータス</label>
+          <select
+            name="status"
+            value={searchParams.status}
+            onChange={handleChange}
+            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">すべて</option>
+            <option value="completed">✅ 完了</option>
+            <option value="failed">⚠️ 失敗</option>
+          </select>
         </div>
 
         <div className="md:col-span-2 lg:col-span-3">
@@ -186,7 +196,6 @@ export default function SearchForm({
           />
         </div>
       </div>
-
       <div className="flex justify-end gap-2">
         {hasInput && (
           <button
@@ -207,3 +216,4 @@ export default function SearchForm({
     </form>
   );
 }
+

@@ -3,6 +3,7 @@ from app.services.gemini_service import gemini_service
 from app.services.firestore_service import firestore_service
 from app.services.gcs_service import gcs_service
 from app.services.tasks_service import tasks_service
+from app.exceptions import PermanentError, TransientError  # ← 追加
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
@@ -33,18 +34,14 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="PDFファイルを選択してください。")
 
     try:
-        # 1. 一時保存用のタスクIDとファイル名を生成
         task_id = str(uuid.uuid4())
         blob_name = f"temp/{task_id}_{file.filename}"
 
-        # 2. GCS へ PDF を一時保存
         pdf_bytes = await file.read()
         gcs_uri = await gcs_service.upload_bytes(pdf_bytes, blob_name)
 
-        # 3. Cloud Tasks へ処理キューを追加
         await tasks_service.create_ocr_task(gcs_uri=gcs_uri, filename=file.filename, task_id=task_id)
 
-        # 4. フロントへ即時レスポンス（202 Accepted）
         return {
             "status": "accepted",
             "message": "PDFのアップロードが完了しました。バックグラウンドで解析処理中です。",
@@ -62,12 +59,17 @@ async def process_ocr_task(payload: TaskPayload):
     """
     Cloud Tasks から実行されるバックグラウンド処理。
     GCSからPDFを取得し、Geminiで解析してFirestoreに保存する。
+
+    エラー分類方針:
+    - PermanentError（モデル404、認証エラーなど）→ 200を返してCloud Tasksのリトライを止める
+    - TransientError（429、5xx、接続エラーなど）→ 500を返してCloud Tasksにリトライさせる
+    - 未分類の例外 → 安全側に倒して500（リトライさせる）
     """
     try:
         # 1. GCS から PDF バイトデータをダウンロード
         pdf_bytes = await gcs_service.download_bytes(payload.gcs_uri)
 
-        # 2. Gemini による解析・構造化
+        # 2. Gemini による解析・構造化（ここで PermanentError / TransientError が飛んでくる）
         result_json = await gemini_service.transcribe_pdf(pdf_bytes)
 
         # 3. 日付フィールドのISO 8601形式（YYYY-MM-DD）の確認・変換ガード
@@ -91,9 +93,39 @@ async def process_ocr_task(payload: TaskPayload):
             "doc_id": doc_id,
             "filename": payload.filename
         }
+
+    except PermanentError as e:
+        # 恒久的な失敗（モデル404、認証エラーなど）
+        # → リトライしても直らないので、200を返してCloud Tasksを終了させる
+        logging.error(f"[PERMANENT] Task processing failed for {payload.filename}: {e}")
+        try:
+            await firestore_service.save_failed_task(
+                filename=payload.filename,
+                error=str(e),
+                gcs_uri=payload.gcs_uri,
+            )
+        except Exception as save_err:
+            # 失敗記録の保存自体が失敗しても、リトライループには入れたくないのでログのみ
+            logging.error(f"Failed to save failure record for {payload.filename}: {save_err}")
+
+        # GCSの一時ファイルは溜め込まずに削除
+        await gcs_service.delete_file(payload.gcs_uri)
+
+        return {
+            "status": "permanent_failure",
+            "filename": payload.filename,
+            "detail": str(e)
+        }  # 200 OK: Cloud Tasksに「完了」と伝える
+
+    except TransientError as e:
+        # 一時的な失敗（429, 5xx, 接続エラーなど）
+        # → 500を返してCloud Tasksにリトライさせる
+        logging.warning(f"[TRANSIENT] Task processing failed for {payload.filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"一時的な処理エラー: {str(e)}")
+
     except Exception as e:
-        logging.error(f"Task processing failed for {payload.filename}: {str(e)}")
-        # 500エラーを返すと Cloud Tasks が自動でリトライを実施します
+        # 未分類のエラー → 安全側に倒してリトライ対象にする
+        logging.error(f"[UNKNOWN] Task processing failed for {payload.filename}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"OCR解析・保存処理に失敗しました: {str(e)}")
 
 
@@ -119,6 +151,7 @@ async def search_documents(
     repair_staff: Optional[str] = Query(None, description="修理担当者"),
     repair_summary: Optional[str] = Query(None, description="修理概要/症状"),
     part_name: Optional[str] = Query(None, description="使用部品名"),
+    status: Optional[str] = Query(None, description="処理ステータス (completed / failed)"),
 ):
     try:
         search_params = {
@@ -131,14 +164,15 @@ async def search_documents(
             "repair_staff": repair_staff,
             "repair_summary": repair_summary,
             "part_name": part_name,
+            "status": status,  # ← 追加
         }
-        
+
         active_params = {
-            k: str(v).strip() 
-            for k, v in search_params.items() 
+            k: str(v).strip()
+            for k, v in search_params.items()
             if v is not None and str(v).strip() != ""
         }
-        
+
         results = await firestore_service.search_documents(search_params=active_params)
         return {"results": results}
     except Exception as e:
@@ -151,7 +185,7 @@ async def update_document(doc_id: str, payload: UpdateDocumentRequest):
         update_data = payload.model_dump(exclude_unset=True)
         if not update_data:
             raise HTTPException(status_code=400, detail="更新対象のデータがありません")
-            
+
         success = await firestore_service.update_document(doc_id, update_data)
         if not success:
             raise HTTPException(status_code=404, detail="対象のドキュメントが見つかりません")
