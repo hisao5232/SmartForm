@@ -2,9 +2,11 @@
 
 export interface PartItem {
   part_name?: string;
+  part_no?: string;
   quantity?: string | number;
-  category?: string;
-  amount?: string | number;
+  purchase_amount?: string | number;
+  billing_amount?: string | number;
+  supplier?: string;
 }
 
 export interface ExtractedData {
@@ -18,15 +20,16 @@ export interface ExtractedData {
   work_time?: string;
   travel_time?: string;
   parts_list?: PartItem[];
-  total_parts_amount?: string | number;
+  total_purchase_amount?: string | number;
+  total_billing_amount?: string | number;
   [key: string]: any;
 }
 
 export interface DocumentData {
   id: string;
   filename: string;
-  status?: 'completed' | 'failed' | string;  // ← 追加
-  error?: string;                            // ← 追加（failed時のエラー内容）
+  status?: 'completed' | 'failed' | string;
+  error?: string;
   raw_text?: string;
   extracted_data?: ExtractedData;
   created_at?: string;
@@ -41,19 +44,25 @@ interface DocumentCardProps {
 
 export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProps) {
   const ext = doc.extracted_data || {};
-  const isFailed = doc.status === 'failed';  // ← 追加
+  const isFailed = doc.status === 'failed';
 
   // タイトルの表示判定（receipt_no があれば「日報No: XXX」、無ければファイル名）
   const cardTitle = ext.receipt_no ? `日報No: ${ext.receipt_no}` : doc.filename;
 
-  const calculateTotalParts = (data?: ExtractedData) => {
-    if (data?.total_parts_amount) return data.total_parts_amount;
+  // 部品リストの (quantity × 単価) を合計するヘルパー。
+  // amountKey で purchase_amount / billing_amount のどちらを集計するか切り替える。
+  const calculatePartsTotal = (
+    data: ExtractedData | undefined,
+    amountKey: 'purchase_amount' | 'billing_amount',
+    totalKey: 'total_purchase_amount' | 'total_billing_amount'
+  ) => {
+    if (data?.[totalKey]) return data[totalKey];
     if (!data?.parts_list || !Array.isArray(data.parts_list)) return '-';
     let total = 0;
     let hasValidCalculation = false;
     for (const part of data.parts_list) {
       const qty = parseFloat(String(part.quantity || '0').replace(/,/g, ''));
-      const amt = parseFloat(String(part.amount || '0').replace(/,/g, ''));
+      const amt = parseFloat(String(part[amountKey] || '0').replace(/,/g, ''));
       if (!isNaN(qty) && !isNaN(amt) && qty > 0 && amt > 0) {
         total += qty * amt;
         hasValidCalculation = true;
@@ -65,7 +74,7 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
   return (
     <div
       className={`p-5 border rounded-xl bg-white shadow-sm hover:shadow-md transition-all space-y-4 ${
-        isFailed ? 'border-red-300' : 'border-slate-200'  // ← 失敗時はカード全体の枠線も赤に
+        isFailed ? 'border-red-300' : 'border-slate-200'
       }`}
     >
       {/* ヘッダー */}
@@ -73,7 +82,6 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-slate-800">{cardTitle}</h3>
-            {/* 新規追加: ステータスバッジ */}
             {isFailed ? (
               <span className="rounded-full border border-red-500/50 bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">
                 ⚠️ 失敗
@@ -94,7 +102,6 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
           </p>
         </div>
         <div className="flex gap-2">
-          {/* 失敗時は「編集」を出さない（抽出データが無いため編集できない） */}
           {!isFailed && (
             <button
               onClick={() => onEdit(doc)}
@@ -112,7 +119,6 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
         </div>
       </div>
 
-      {/* 新規追加: 失敗時はエラー内容を表示して終了（詳細データグリッド等は表示しない） */}
       {isFailed ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <span className="block text-xs font-semibold text-red-500 mb-1">エラー内容</span>
@@ -158,10 +164,17 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
               <span className="text-xs text-slate-500 font-semibold block">出張費作業時間</span>
               <span className="font-medium text-slate-800">{ext.travel_time || '-'}</span>
             </div>
-            <div className="col-span-2 md:col-span-3">
-              <span className="text-xs text-slate-500 font-semibold block">使用部品代金合計</span>
+            {/* 変更: 使用部品代金合計 → 仕入部品合計・請求部品合計の2項目に分割 */}
+            <div>
+              <span className="text-xs text-slate-500 font-semibold block">仕入部品合計</span>
+              <span className="font-bold text-slate-700 text-base">
+                {calculatePartsTotal(ext, 'purchase_amount', 'total_purchase_amount')}
+              </span>
+            </div>
+            <div className="col-span-2">
+              <span className="text-xs text-slate-500 font-semibold block">請求部品合計</span>
               <span className="font-bold text-blue-700 text-base">
-                {calculateTotalParts(ext)}
+                {calculatePartsTotal(ext, 'billing_amount', 'total_billing_amount')}
               </span>
             </div>
           </div>
@@ -176,19 +189,23 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
                 <table className="w-full text-xs text-left text-slate-700">
                   <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
                     <tr>
-                      <th className="p-2">品名</th>
-                      <th className="p-2 w-20 text-right">数量</th>
-                      <th className="p-2 w-28 text-right">金額</th>
-                      <th className="p-2 w-32">仕入先</th>
+                      <th className="p-2">使用部品</th>
+                      <th className="p-2 w-24">部品番号</th>
+                      <th className="p-2 w-16 text-right">個数</th>
+                      <th className="p-2 w-24 text-right">仕入金額</th>
+                      <th className="p-2 w-24 text-right">請求金額</th>
+                      <th className="p-2 w-28">部品提供先</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {ext.parts_list.map((part, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="p-2 font-medium">{part.part_name || '-'}</td>
+                        <td className="p-2">{part.part_no || '-'}</td>
                         <td className="p-2 text-right">{part.quantity || '-'}</td>
-                        <td className="p-2 text-right">{part.amount || '-'}</td>
-                        <td className="p-2">{part.category || '-'}</td>
+                        <td className="p-2 text-right">{part.purchase_amount || '-'}</td>
+                        <td className="p-2 text-right">{part.billing_amount || '-'}</td>
+                        <td className="p-2">{part.supplier || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -205,4 +222,3 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
     </div>
   );
 }
-

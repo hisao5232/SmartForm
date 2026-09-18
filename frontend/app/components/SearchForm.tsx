@@ -12,7 +12,9 @@ export interface SearchParams {
   repair_staff: string;
   repair_summary: string;
   part_name: string;
-  status: string;  // ← 追加（'', 'completed', 'failed' のいずれか）
+  part_no: string;    // ← 追加
+  supplier: string;   // ← 追加
+  status: string;
 }
 
 interface SearchFormProps {
@@ -28,13 +30,12 @@ export default function SearchForm({
   onSearch,
   onReset,
 }: SearchFormProps) {
-  // 日付検索モードのステート ('single': ピンポイント, 'range': 期間指定)
   const [dateMode, setDateMode] = useState<'single' | 'range'>(
     searchParams.start_date || searchParams.end_date ? 'range' : 'single'
   );
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>  // ← select にも対応させるため型を拡張
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
     setSearchParams((prev) => ({
@@ -43,7 +44,6 @@ export default function SearchForm({
     }));
   };
 
-  // 日付モード切り替えハンドラ
   const handleModeChange = (mode: 'single' | 'range') => {
     setDateMode(mode);
     if (mode === 'single') {
@@ -53,7 +53,6 @@ export default function SearchForm({
     }
   };
 
-  // いずれかの項目に入力があるかチェック
   const hasInput = Object.values(searchParams).some((val) => val.trim() !== '');
 
   return (
@@ -169,7 +168,6 @@ export default function SearchForm({
           />
         </div>
 
-        {/* 新規追加: 処理ステータス絞り込み */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">処理ステータス</label>
           <select
@@ -184,13 +182,40 @@ export default function SearchForm({
           </select>
         </div>
 
-        <div className="md:col-span-2 lg:col-span-3">
-          <label className="block text-xs font-semibold text-slate-600 mb-1">使用部品名</label>
+        {/* 変更: 使用部品名 → 使用部品 */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">使用部品</label>
           <input
             type="text"
             name="part_name"
             placeholder="品名・部品名で検索 ..."
             value={searchParams.part_name}
+            onChange={handleChange}
+            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          />
+        </div>
+
+        {/* 新規追加: 部品番号 */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">部品番号</label>
+          <input
+            type="text"
+            name="part_no"
+            placeholder="部品番号で検索 ..."
+            value={searchParams.part_no}
+            onChange={handleChange}
+            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          />
+        </div>
+
+        {/* 新規追加: 部品提供先 */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">部品提供先</label>
+          <input
+            type="text"
+            name="supplier"
+            placeholder="部品提供先で検索 ..."
+            value={searchParams.supplier}
             onChange={handleChange}
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
@@ -216,4 +241,3 @@ export default function SearchForm({
     </form>
   );
 }
-

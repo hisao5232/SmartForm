@@ -16,6 +16,8 @@ const initialSearchParams: SearchParams = {
   repair_staff: '',
   repair_summary: '',
   part_name: '',
+  part_no: '',    // ← 追加
+  supplier: '',   // ← 追加
   status: '',  // '', 'completed', 'failed' のいずれか
 };
 
