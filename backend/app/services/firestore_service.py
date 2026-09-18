@@ -117,6 +117,38 @@ class FirestoreService:
                     if not part_found:
                         is_match = False
                         break
+
+                # 新規追加: 部品番号での検索（part_nameと同じパターン）
+                elif key == "part_no":
+                    keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
+                    parts_list = extracted.get("parts_list", [])
+                    part_found = False
+                    if isinstance(parts_list, list):
+                        for part in parts_list:
+                            if isinstance(part, dict):
+                                no = str(part.get("part_no") or "").lower()
+                                if any(kw in no for kw in keywords):
+                                    part_found = True
+                                    break
+                    if not part_found:
+                        is_match = False
+                        break
+
+                # 新規追加: 部品提供先での検索（part_nameと同じパターン）
+                elif key == "supplier":
+                    keywords = [kw.lower() for kw in re.split(r'\s+', target_val_str) if kw]
+                    parts_list = extracted.get("parts_list", [])
+                    part_found = False
+                    if isinstance(parts_list, list):
+                        for part in parts_list:
+                            if isinstance(part, dict):
+                                sup = str(part.get("supplier") or "").lower()
+                                if any(kw in sup for kw in keywords):
+                                    part_found = True
+                                    break
+                    if not part_found:
+                        is_match = False
+                        break
                 else:
                     field_val = str(extracted.get(key) or "").lower()
                     if key == "date":

@@ -151,6 +151,8 @@ async def search_documents(
     repair_staff: Optional[str] = Query(None, description="修理担当者"),
     repair_summary: Optional[str] = Query(None, description="修理概要/症状"),
     part_name: Optional[str] = Query(None, description="使用部品名"),
+    part_no: Optional[str] = Query(None, description="部品番号"),      # ← 追加
+    supplier: Optional[str] = Query(None, description="部品提供先"),   # ← 追加
     status: Optional[str] = Query(None, description="処理ステータス (completed / failed)"),
 ):
     try:
@@ -164,6 +166,8 @@ async def search_documents(
             "repair_staff": repair_staff,
             "repair_summary": repair_summary,
             "part_name": part_name,
+            "part_no": part_no,      # ← 追加
+            "supplier": supplier,    # ← 追加
             "status": status,  # ← 追加
         }
 

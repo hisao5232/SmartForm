@@ -7,10 +7,15 @@ from app.config import settings
 
 # --- 出力用レスポンススキーマの定義 ---
 class PartItem(BaseModel):
-    part_name: Optional[str] = Field(default=None, description="品名・部品名")
-    quantity: Optional[str] = Field(default=None, description="数量・個数")
-    category: Optional[str] = Field(default=None, description="仕入先・仕入区分・分類")
-    amount: Optional[str] = Field(default=None, description="単価または金額")
+    part_name: Optional[str] = Field(default=None, description="使用部品（品名）")
+    part_no: Optional[str] = Field(default=None, description="部品番号")
+    quantity: Optional[str] = Field(default=None, description="個数")
+    purchase_amount: Optional[str] = Field(default=None, description="仕入金額")
+    billing_amount: Optional[str] = Field(default=None, description="請求金額")
+    supplier: Optional[str] = Field(
+        default=None,
+        description="部品提供先。表内に「在」という文字がデフォルトで入っている場合は、それを除いた実際の提供先名のみを抽出する（「在」のみの場合はnullとする）"
+    )
 
 class ExtractedData(BaseModel):
     report_no: Optional[str] = Field(default=None, description="日報No (例: A-101160)")
@@ -32,9 +37,13 @@ class ExtractedData(BaseModel):
     mileage: Optional[str] = Field(default=None, description="走行距離 (例: 10km)")
     total_amount: Optional[str] = Field(default=None, description="請求金額")
     parts_list: List[PartItem] = Field(default_factory=list, description="使用部品のリスト")
-    total_parts_amount: Optional[str] = Field(
-        default=None, 
-        description="使用部品代金合計 (各部品の金額×数量を合計した金額)"
+    total_purchase_amount: Optional[str] = Field(
+        default=None,
+        description="部品仕入合計 (各部品の仕入金額×個数を合計した金額)"
+    )
+    total_billing_amount: Optional[str] = Field(
+        default=None,
+        description="部品請求合計 (各部品の請求金額×個数を合計した金額)"
     )
     other_notes: Optional[str] = Field(default=None, description="枠外メモ、特記事項、指示内容などの全記載事項")
 
@@ -60,7 +69,10 @@ class GeminiService:
 - raw_text には、帳票に書かれているすべての文字（活字・手書き問わず）を読み取ったそのままの全文テキストを改行区切りで出力してください。
 - extracted_data 内の略称や崩し文字（例：「特自ン」→「特定自主点検」）は、文脈から正しい標準表記に修正して抽出してください。
 - 工賃・出張時間の単位（例: 1H30M）や走行距離（例: 10km）などの単位付き手書き文字も正確に抽出してください。
-- 使用部品代金合計 (total_parts_amount) は、パーツリストの（金額 × 数量）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
+- 使用部品テーブルの各行から、使用部品（part_name）、部品番号（part_no）、個数（quantity）、仕入金額（purchase_amount）、請求金額（billing_amount）、部品提供先（supplier）を抽出してください。
+- 部品提供先（supplier）の欄に「在」という文字がデフォルトで印字されている場合、それは「在庫」を意味する既定表記であり実際の提供先名ではありません。「在」のみが記載されている場合はnullとして扱い、「在」の後に別の提供先名が続く場合はその部分のみを抽出してください。
+- 部品仕入合計 (total_purchase_amount) は、パーツリストの（仕入金額 × 個数）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
+- 部品請求合計 (total_billing_amount) は、パーツリストの（請求金額 × 個数）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
 - 帳票内のすべての手書き文字・数字を漏らさず拾い上げてください。
 - 該当する記載がない項目は null にしてください。
 """
