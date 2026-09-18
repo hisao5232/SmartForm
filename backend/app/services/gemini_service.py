@@ -1,9 +1,13 @@
 import json
+import re  # ← 追加
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.config import settings
+from app.exceptions import PermanentError, TransientError
+
 
 # --- 出力用レスポンススキーマの定義 ---
 class PartItem(BaseModel):
@@ -33,7 +37,15 @@ class ExtractedData(BaseModel):
     repair_staff: Optional[str] = Field(default=None, description="修理担当者名")
     repair_summary: Optional[str] = Field(default=None, description="修理内容・作業概要 (例: 特定自主点検)")
     work_time: Optional[str] = Field(default=None, description="工賃の作業時間 (例: 1H30M)")
+    work_time_minutes: Optional[int] = Field(
+        default=None,
+        description="work_time を分単位に変換した数値（集計用）。この値はGeminiではなくPython側で計算するため、出力しなくてよい"
+    )
     travel_time: Optional[str] = Field(default=None, description="出張費の作業時間・移動時間 (例: 1H30M)")
+    travel_time_minutes: Optional[int] = Field(
+        default=None,
+        description="travel_time を分単位に変換した数値（集計用）。この値はGeminiではなくPython側で計算するため、出力しなくてよい"
+    )
     mileage: Optional[str] = Field(default=None, description="走行距離 (例: 10km)")
     total_amount: Optional[str] = Field(default=None, description="請求金額")
     parts_list: List[PartItem] = Field(default_factory=list, description="使用部品のリスト")
@@ -52,6 +64,23 @@ class OCRReportResponse(BaseModel):
     extracted_data: ExtractedData
 
 
+def parse_time_to_minutes(time_str: Optional[str]) -> Optional[int]:
+    """
+    "1H30M", "1h30m", "45M", "2H" のような時間表記を分単位の整数に変換する。
+    H(時間)・M(分)のどちらか一方だけでも変換可能。解釈できない場合はNoneを返す。
+    """
+    if not time_str:
+        return None
+
+    match = re.search(r'(?:(\d+)\s*[Hh])?\s*(?:(\d+)\s*[Mm])?', time_str.strip())
+    if not match or (not match.group(1) and not match.group(2)):
+        return None
+
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    return hours * 60 + minutes
+
+
 class GeminiService:
     def __init__(self):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -68,7 +97,7 @@ class GeminiService:
 - 日付（date）は、帳票上の表記が和暦（例: 令和8年9月8日、R8.9.8）や日本語表記（例: 2026年9月8日）であっても、必ず「YYYY-MM-DD」形式のISO 8601標準文字列に正規化・変換して出力してください。年が省略されている場合は文脈や他の記載から補完してください。
 - raw_text には、帳票に書かれているすべての文字（活字・手書き問わず）を読み取ったそのままの全文テキストを改行区切りで出力してください。
 - extracted_data 内の略称や崩し文字（例：「特自ン」→「特定自主点検」）は、文脈から正しい標準表記に修正して抽出してください。
-- 工賃・出張時間の単位（例: 1H30M）や走行距離（例: 10km）などの単位付き手書き文字も正確に抽出してください。
+- 工賃・出張時間の単位（例: 1H30M）や走行距離（例: 10km）などの単位付き手書き文字も正確に抽出してください。work_time_minutes / travel_time_minutes は出力不要です（アプリ側で自動計算します）。
 - 使用部品テーブルの各行から、使用部品（part_name）、部品番号（part_no）、個数（quantity）、仕入金額（purchase_amount）、請求金額（billing_amount）、部品提供先（supplier）を抽出してください。
 - 部品提供先（supplier）の欄に「在」という文字がデフォルトで印字されている場合、それは「在庫」を意味する既定表記であり実際の提供先名ではありません。「在」のみが記載されている場合はnullとして扱い、「在」の後に別の提供先名が続く場合はその部分のみを抽出してください。
 - 部品仕入合計 (total_purchase_amount) は、パーツリストの（仕入金額 × 個数）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
@@ -92,21 +121,27 @@ class GeminiService:
                 )
             )
         except genai_errors.ClientError as e:
-            # 実測確認済み: 404(モデル未存在)/429(レート制限)はどちらもClientError
             if e.code == 429:
-                # レート制限は時間を置けば直る → リトライさせる
                 raise TransientError(f"レート制限に達しました (code={e.code}): {e.message}") from e
-            # 404, 401, 403 など、その他のクライアントエラーは直らない → リトライさせない
             raise PermanentError(f"Geminiへのリクエストが拒否されました (code={e.code}): {e.message}") from e
         except genai_errors.ServerError as e:
-            # 5xx系: Gemini側の一時的な障害 → リトライさせる
             raise TransientError(f"Gemini側で一時的なエラーが発生しました (code={e.code}): {e.message}") from e
         except (TimeoutError, ConnectionError) as e:
             raise TransientError(f"接続エラー: {e}") from e
 
         try:
-            return json.loads(response.text)
+            result = json.loads(response.text)
         except (json.JSONDecodeError, AttributeError) as e:
             raise PermanentError(f"Geminiの応答をJSONとして解釈できませんでした: {e}") from e
+
+        # work_time / travel_time を分単位の数値に変換して上書きする（集計用）
+        # Geminiの出力ではなく、常にPython側の正規表現パースで確定させる
+        extracted = result.get("extracted_data", {})
+        if isinstance(extracted, dict):
+            extracted["work_time_minutes"] = parse_time_to_minutes(extracted.get("work_time"))
+            extracted["travel_time_minutes"] = parse_time_to_minutes(extracted.get("travel_time"))
+
+        return result
+
 
 gemini_service = GeminiService()
