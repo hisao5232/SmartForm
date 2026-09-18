@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';  // ← useMemo を追加
 import { useRouter } from 'next/navigation';
 import DocumentCard, { DocumentData } from '@/app/components/DocumentCard';
 import EditDocumentModal from '@/app/components/EditDocumentModal';
@@ -16,9 +16,25 @@ const initialSearchParams: SearchParams = {
   repair_staff: '',
   repair_summary: '',
   part_name: '',
-  part_no: '',    // ← 追加
-  supplier: '',   // ← 追加
-  status: '',  // '', 'completed', 'failed' のいずれか
+  part_no: '',
+  supplier: '',
+  status: '',
+};
+
+// 金額文字列（"1,000" など）を数値に変換するヘルパー
+const toNumber = (val: unknown): number => {
+  const n = parseFloat(String(val ?? '0').replace(/,/g, ''));
+  return isNaN(n) ? 0 : n;
+};
+
+// 分数を "○H○M" 形式の文字列に変換するヘルパー（表示用）
+const formatMinutes = (totalMinutes: number): string => {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0 && m === 0) return '0M';
+  if (h === 0) return `${m}M`;
+  if (m === 0) return `${h}H`;
+  return `${h}H${m}M`;
 };
 
 export default function SearchPage() {
@@ -28,12 +44,30 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingDoc, setEditingDoc] = useState<DocumentData | null>(null);
-  // 検索を実行したかどうかを判定するフラグ
   const [hasSearched, setHasSearched] = useState(false);
 
   const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL ||
     'https://smartform-backend-416426508758.asia-northeast1.run.app';
+
+  // 新規追加: 検索結果の集計（documentsが変わったときだけ再計算）
+  const summary = useMemo(() => {
+    let workTimeMinutes = 0;
+    let travelTimeMinutes = 0;
+    let totalPurchaseAmount = 0;
+    let totalBillingAmount = 0;
+
+    for (const doc of documents) {
+      const ext = doc.extracted_data;
+      if (!ext) continue;
+      workTimeMinutes += toNumber(ext.work_time_minutes);
+      travelTimeMinutes += toNumber(ext.travel_time_minutes);
+      totalPurchaseAmount += toNumber(ext.total_purchase_amount);
+      totalBillingAmount += toNumber(ext.total_billing_amount);
+    }
+
+    return { workTimeMinutes, travelTimeMinutes, totalPurchaseAmount, totalBillingAmount };
+  }, [documents]);
 
   // 一覧取得（条件なし検索時など）
   const fetchDocuments = async () => {
@@ -52,7 +86,6 @@ export default function SearchPage() {
     }
   };
 
-  // 検索処理
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -63,7 +96,6 @@ export default function SearchPage() {
       }
     });
 
-    // 何も入力されていない場合は全件取得
     if (queryParams.toString() === '') {
       fetchDocuments();
       return;
@@ -86,11 +118,9 @@ export default function SearchPage() {
     }
   };
 
-  // 「失敗のみ表示」ショートカット処理（新規追加）
   const fetchFailedOnly = async () => {
     setLoading(true);
     setError(null);
-    // 検索フォームの表示も「failed」で絞り込んだ状態に同期させる
     setSearchParams({ ...initialSearchParams, status: 'failed' });
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/ocr/search?status=failed`);
@@ -105,7 +135,6 @@ export default function SearchPage() {
     }
   };
 
-  // フォームリセット処理
   const handleReset = () => {
     setSearchParams(initialSearchParams);
     setDocuments([]);
@@ -113,7 +142,6 @@ export default function SearchPage() {
     setError(null);
   };
 
-  // 更新保存処理
   const handleSaveEdit = async (docId: string, filename: string, extracted_data: any) => {
     const res = await fetch(`${API_BASE_URL}/api/v1/ocr/documents/${docId}`, {
       method: 'PUT',
@@ -128,7 +156,6 @@ export default function SearchPage() {
     );
   };
 
-  // 削除処理
   const handleDelete = async (docId: string) => {
     if (!confirm('このドキュメントを削除してもよろしいですか？')) return;
     try {
@@ -144,7 +171,6 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
-      {/* ナビゲーションバー */}
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between p-4">
           <h1
@@ -162,7 +188,6 @@ export default function SearchPage() {
         </div>
       </header>
 
-      {/* メインコンテンツ */}
       <main className="mx-auto max-w-6xl p-6">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
           <div className="mb-4 flex items-center justify-between">
@@ -170,7 +195,6 @@ export default function SearchPage() {
               🔍 ドキュメント検索・管理
             </h2>
 
-            {/* 新規追加: 失敗タスクへのショートカットボタン */}
             <button
               type="button"
               onClick={fetchFailedOnly}
@@ -188,12 +212,44 @@ export default function SearchPage() {
             onReset={handleReset}
           />
 
-          {/* 検索実行後の件数表示エリア */}
+          {/* 検索実行後の件数表示・集計エリア */}
           {hasSearched && !loading && !error && (
-            <div className="mt-6 mb-4 flex items-center justify-between border-t border-slate-100 pt-4">
-              <span className="text-sm font-medium text-slate-600">
-                検索結果: <span className="text-base font-bold text-blue-600">{documents.length}</span> 件
-              </span>
+            <div className="mt-6 mb-4 border-t border-slate-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-slate-600">
+                  検索結果: <span className="text-base font-bold text-blue-600">{documents.length}</span> 件
+                </span>
+              </div>
+
+              {/* 新規追加: 集計サマリー（件数が0件のときは表示しない） */}
+              {documents.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <span className="text-xs text-slate-500 font-semibold block">工賃合計</span>
+                    <span className="text-lg font-bold text-slate-800">
+                      {formatMinutes(summary.workTimeMinutes)}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <span className="text-xs text-slate-500 font-semibold block">出張費合計</span>
+                    <span className="text-lg font-bold text-slate-800">
+                      {formatMinutes(summary.travelTimeMinutes)}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <span className="text-xs text-slate-500 font-semibold block">仕入金額総合計</span>
+                    <span className="text-lg font-bold text-slate-800">
+                      ¥{summary.totalPurchaseAmount.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <span className="text-xs text-blue-500 font-semibold block">請求金額総合計</span>
+                    <span className="text-lg font-bold text-blue-700">
+                      ¥{summary.totalBillingAmount.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -230,7 +286,6 @@ export default function SearchPage() {
         </div>
       </main>
 
-      {/* 編集モーダル */}
       {editingDoc && (
         <EditDocumentModal
           doc={editingDoc}
@@ -241,4 +296,3 @@ export default function SearchPage() {
     </div>
   );
 }
-

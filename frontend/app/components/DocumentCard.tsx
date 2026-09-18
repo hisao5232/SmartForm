@@ -22,6 +22,8 @@ export interface ExtractedData {
   parts_list?: PartItem[];
   total_purchase_amount?: string | number;
   total_billing_amount?: string | number;
+  work_time_minutes?: number;    // ← 追加
+  travel_time_minutes?: number;  // ← 追加
   [key: string]: any;
 }
 
