@@ -1,5 +1,5 @@
 import json
-import re  # ← 追加
+import re
 from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
@@ -13,8 +13,17 @@ from app.exceptions import PermanentError, TransientError
 class PartItem(BaseModel):
     part_name: Optional[str] = Field(default=None, description="使用部品（品名）")
     part_no: Optional[str] = Field(default=None, description="部品番号")
-    quantity: Optional[str] = Field(default=None, description="個数")
-    purchase_amount: Optional[str] = Field(default=None, description="仕入金額")
+    quantity: Optional[str] = Field(
+        default=None,
+        description="個数。数字の後にリットルを表す単位記号（L, l, ℓ, リットル等)が付いている場合は、"
+                    "数字部分のみを抽出し単位記号は完全に取り除く（例: '7ℓ' → '7', '7L' → '7'）"
+    )
+    purchase_amount: Optional[str] = Field(
+        default=None,
+        description="仕入金額。欄に「×190 1330」のように「×(数字A) (数字B)」の形式で2つの数字が並んでいる場合、"
+                    "必ず×の直後にある数字A（単価）を抽出する。数字B（数字Aとの掛け算の結果である合計額）は抽出しない。"
+                    "×記号が無く単一の金額のみが記載されている場合はその値をそのまま抽出する"
+    )
     billing_amount: Optional[str] = Field(default=None, description="請求金額")
     supplier: Optional[str] = Field(
         default=None,
@@ -36,12 +45,20 @@ class ExtractedData(BaseModel):
     hour_meter: Optional[str] = Field(default=None, description="アワーメーター")
     repair_staff: Optional[str] = Field(default=None, description="修理担当者名")
     repair_summary: Optional[str] = Field(default=None, description="修理内容・作業概要 (例: 特定自主点検)")
-    work_time: Optional[str] = Field(default=None, description="工賃の作業時間 (例: 1H30M)")
+    work_time: Optional[str] = Field(
+        default=None,
+        description="工賃の作業時間。'H30M'のように時間の数字が空欄の場合はHを省略して'30M'として出力し、"
+                    "'2H M'のように分の数字が空欄の場合は'2H0M'として出力する（例: 1H30M, 30M, 2H0M）"
+    )
     work_time_minutes: Optional[int] = Field(
         default=None,
         description="work_time を分単位に変換した数値（集計用）。この値はGeminiではなくPython側で計算するため、出力しなくてよい"
     )
-    travel_time: Optional[str] = Field(default=None, description="出張費の作業時間・移動時間 (例: 1H30M)")
+    travel_time: Optional[str] = Field(
+        default=None,
+        description="出張費の作業時間・移動時間。'H30M'のように時間の数字が空欄の場合はHを省略して'30M'として出力し、"
+                    "'2H M'のように分の数字が空欄の場合は'2H0M'として出力する（例: 1H30M, 30M, 2H0M）"
+    )
     travel_time_minutes: Optional[int] = Field(
         default=None,
         description="travel_time を分単位に変換した数値（集計用）。この値はGeminiではなくPython側で計算するため、出力しなくてよい"
@@ -66,19 +83,44 @@ class OCRReportResponse(BaseModel):
 
 def parse_time_to_minutes(time_str: Optional[str]) -> Optional[int]:
     """
-    "1H30M", "1h30m", "45M", "2H" のような時間表記を分単位の整数に変換する。
-    H(時間)・M(分)のどちらか一方だけでも変換可能。解釈できない場合はNoneを返す。
+    "1H30M", "30M", "2H0M", "2H" のような時間表記を分単位の整数に変換する。
+    H(時間)・M(分)を文字列内のどこにあっても個別に検索するので、
+    どちらか一方が欠けている表記でも解釈できる。
     """
     if not time_str:
         return None
 
-    match = re.search(r'(?:(\d+)\s*[Hh])?\s*(?:(\d+)\s*[Mm])?', time_str.strip())
-    if not match or (not match.group(1) and not match.group(2)):
+    hour_match = re.search(r'(\d+)\s*[Hh]', time_str)
+    minute_match = re.search(r'(\d+)\s*[Mm]', time_str)
+
+    if not hour_match and not minute_match:
         return None
 
-    hours = int(match.group(1)) if match.group(1) else 0
-    minutes = int(match.group(2)) if match.group(2) else 0
+    hours = int(hour_match.group(1)) if hour_match else 0
+    minutes = int(minute_match.group(1)) if minute_match else 0
     return hours * 60 + minutes
+
+
+def clean_quantity(value: Optional[str]) -> Optional[str]:
+    """
+    "7ℓ", "7L", "7l" のような個数表記から、末尾に付く単位を取り除き数字のみを残す。
+    数字が見つからない場合は元の値をそのまま返す（想定外フォーマットを握りつぶさないため）。
+    """
+    if not value:
+        return value
+    match = re.match(r'\s*([\d,.]+)', str(value))
+    return match.group(1) if match else value
+
+
+def clean_purchase_amount(value: Optional[str]) -> Optional[str]:
+    """
+    "×190 1330" のような「×単価 合計」表記から単価側のみを取り出す。
+    ×が無い場合は元の値をそのまま返す。
+    """
+    if not value:
+        return value
+    match = re.search(r'[×x]\s*([\d,.]+)', str(value))
+    return match.group(1) if match else value
 
 
 class GeminiService:
@@ -97,8 +139,10 @@ class GeminiService:
 - 日付（date）は、帳票上の表記が和暦（例: 令和8年9月8日、R8.9.8）や日本語表記（例: 2026年9月8日）であっても、必ず「YYYY-MM-DD」形式のISO 8601標準文字列に正規化・変換して出力してください。年が省略されている場合は文脈や他の記載から補完してください。
 - raw_text には、帳票に書かれているすべての文字（活字・手書き問わず）を読み取ったそのままの全文テキストを改行区切りで出力してください。
 - extracted_data 内の略称や崩し文字（例：「特自ン」→「特定自主点検」）は、文脈から正しい標準表記に修正して抽出してください。
-- 工賃・出張時間の単位（例: 1H30M）や走行距離（例: 10km）などの単位付き手書き文字も正確に抽出してください。work_time_minutes / travel_time_minutes は出力不要です（アプリ側で自動計算します）。
+- 工賃（work_time）・出張費（travel_time）の作業時間は、時間(H)と分(M)の両方が記載されている場合は「1H30M」のように出力してください。分の数字が空欄・未記入の場合は時間のみ「2H0M」のように分を0として出力し、時間の数字が空欄・未記入の場合はHを省略して「30M」のように分のみを出力してください。work_time_minutes / travel_time_minutes は出力不要です（アプリ側で自動計算します）。
 - 使用部品テーブルの各行から、使用部品（part_name）、部品番号（part_no）、個数（quantity）、仕入金額（purchase_amount）、請求金額（billing_amount）、部品提供先（supplier）を抽出してください。
+- 個数（quantity）の数字の後にリットルを表す単位記号（半角/全角のL、または「ℓ」）が付いている場合、数字部分のみを抽出し単位記号は完全に取り除いてください（例: 「7ℓ」→「7」、「7L」→「7」）。
+- 仕入金額（purchase_amount）の欄が「×190 1330」のように「×(数字A) (数字B)」の形式で2つの数字が並んでいる場合、必ず×の直後にある数字A（単価）のみを抽出してください。数字B（数字Aとの掛け算の結果である合計額）は抽出しないでください。×記号が無く単一の金額のみが記載されている場合はその値をそのまま抽出してください。
 - 部品提供先（supplier）の欄に「在」という文字がデフォルトで印字されている場合、それは「在庫」を意味する既定表記であり実際の提供先名ではありません。「在」のみが記載されている場合はnullとして扱い、「在」の後に別の提供先名が続く場合はその部分のみを抽出してください。
 - 部品仕入合計 (total_purchase_amount) は、パーツリストの（仕入金額 × 個数）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
 - 部品請求合計 (total_billing_amount) は、パーツリストの（請求金額 × 個数）を計算・集計して出力してください。明確な記載がある場合はその値を優先しても構いません。
@@ -134,14 +178,22 @@ class GeminiService:
         except (json.JSONDecodeError, AttributeError) as e:
             raise PermanentError(f"Geminiの応答をJSONとして解釈できませんでした: {e}") from e
 
-        # work_time / travel_time を分単位の数値に変換して上書きする（集計用）
-        # Geminiの出力ではなく、常にPython側の正規表現パースで確定させる
+        # work_time / travel_time を分単位の数値に変換、quantity / purchase_amount をクリーニング
+        # Geminiの出力に頼らず、常にPython側の正規表現パースで確定させる
         extracted = result.get("extracted_data", {})
         if isinstance(extracted, dict):
             extracted["work_time_minutes"] = parse_time_to_minutes(extracted.get("work_time"))
             extracted["travel_time_minutes"] = parse_time_to_minutes(extracted.get("travel_time"))
 
+            parts_list = extracted.get("parts_list", [])
+            if isinstance(parts_list, list):
+                for part in parts_list:
+                    if isinstance(part, dict):
+                        part["quantity"] = clean_quantity(part.get("quantity"))
+                        part["purchase_amount"] = clean_purchase_amount(part.get("purchase_amount"))
+
         return result
 
 
 gemini_service = GeminiService()
+
