@@ -7,13 +7,14 @@ export interface SearchParams {
   start_date: string;
   end_date: string;
   customer: string;
+  customer_type: string;
   machine_name: string;
   management_no: string;
   repair_staff: string;
   repair_summary: string;
   part_name: string;
-  part_no: string;    // ← 追加
-  supplier: string;   // ← 追加
+  part_no: string;
+  supplier: string;
   status: string;
 }
 
@@ -123,6 +124,22 @@ export default function SearchForm({
             className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
+
+        {/* 新規追加: 得意先区分（自社リース機 / 先方企業）の絞り込み */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">得意先区分</label>
+          <select
+            name="customer_type"
+            value={searchParams.customer_type}
+            onChange={handleChange}
+            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">すべて</option>
+            <option value="own_lease">🏢 自社リース機</option>
+            <option value="client">🤝 先方企業</option>
+          </select>
+        </div>
+
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">機械名</label>
           <input
@@ -182,7 +199,6 @@ export default function SearchForm({
           </select>
         </div>
 
-        {/* 変更: 使用部品名 → 使用部品 */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">使用部品</label>
           <input
@@ -195,7 +211,6 @@ export default function SearchForm({
           />
         </div>
 
-        {/* 新規追加: 部品番号 */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">部品番号</label>
           <input
@@ -208,7 +223,6 @@ export default function SearchForm({
           />
         </div>
 
-        {/* 新規追加: 部品提供先 */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">部品提供先</label>
           <input

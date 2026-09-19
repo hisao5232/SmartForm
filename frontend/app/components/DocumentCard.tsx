@@ -13,6 +13,7 @@ export interface ExtractedData {
   date?: string;
   receipt_no?: string;
   customer?: string;
+  customer_type?: 'own_lease' | 'client' | string;
   machine_name?: string;
   management_no?: string;
   hour_meter?: string | number;
@@ -22,8 +23,8 @@ export interface ExtractedData {
   parts_list?: PartItem[];
   total_purchase_amount?: string | number;
   total_billing_amount?: string | number;
-  work_time_minutes?: number;    // ← 追加
-  travel_time_minutes?: number;  // ← 追加
+  work_time_minutes?: number;
+  travel_time_minutes?: number;
   [key: string]: any;
 }
 
@@ -138,9 +139,23 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
               <span className="text-xs text-slate-500 font-semibold block">修理受品書 No</span>
               <span className="font-medium text-slate-800">{ext.receipt_no || '-'}</span>
             </div>
+            {/* 変更: 得意先名の隣に得意先区分バッジを表示 */}
             <div>
               <span className="text-xs text-slate-500 font-semibold block">得意先名</span>
-              <span className="font-medium text-slate-800">{ext.customer || '-'}</span>
+              <span className="font-medium text-slate-800">
+                {ext.customer || '-'}
+                {ext.customer_type && (
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      ext.customer_type === 'own_lease'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {ext.customer_type === 'own_lease' ? '自社リース機' : '先方企業'}
+                  </span>
+                )}
+              </span>
             </div>
             <div>
               <span className="text-xs text-slate-500 font-semibold block">担当者名</span>

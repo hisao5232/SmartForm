@@ -11,6 +11,7 @@ const initialSearchParams: SearchParams = {
   start_date: '',
   end_date: '',
   customer: '',
+  customer_type: '',
   machine_name: '',
   management_no: '',
   repair_staff: '',
