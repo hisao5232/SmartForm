@@ -146,6 +146,7 @@ async def search_documents(
     start_date: Optional[str] = Query(None, description="開始日 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="終了日 (YYYY-MM-DD)"),
     customer: Optional[str] = Query(None, description="顧客名/納入先"),
+    customer_type: Optional[str] = Query(None, description="得意先区分 (own_lease / client)"),  # ← 追加
     machine_name: Optional[str] = Query(None, description="機種/型式"),
     management_no: Optional[str] = Query(None, description="管理番号/機番"),
     repair_staff: Optional[str] = Query(None, description="修理担当者"),
@@ -161,6 +162,7 @@ async def search_documents(
             "start_date": start_date,
             "end_date": end_date,
             "customer": customer,
+            "customer_type": customer_type,
             "machine_name": machine_name,
             "management_no": management_no,
             "repair_staff": repair_staff,

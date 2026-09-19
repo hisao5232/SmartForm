@@ -94,6 +94,12 @@ class FirestoreService:
                     if str(data.get("status") or "") != target_val_str:
                         is_match = False
                         break
+                    
+                elif key == "customer_type":
+                    field_val = str(extracted.get("customer_type") or "")
+                    if field_val != target_val_str:
+                        is_match = False
+                        break
 
                 elif key == "start_date":
                     if not doc_date or doc_date < target_val_str:
@@ -160,6 +166,7 @@ class FirestoreService:
                         if not any(kw in field_val for kw in keywords):
                             is_match = False
                             break
+
             if is_match:
                 results.append(data)
         return results
