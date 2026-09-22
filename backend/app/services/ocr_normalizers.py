@@ -6,7 +6,7 @@ Geminiの解析結果に対する、Python側の正規化・クリーニング�
 import re
 import difflib
 from typing import Optional
-from app.known_names import KNOWN_LEASE_NAMES, KNOWN_SUPPLIER_NAMES
+from app.known_names import KNOWN_LEASE_NAMES, KNOWN_SUPPLIER_NAMES, IN_HOUSE_SITE_KEYWORDS
 
 
 def parse_time_to_minutes(time_str: Optional[str]) -> Optional[int]:
@@ -129,6 +129,9 @@ def apply_all_normalizations(extracted: dict) -> dict:
     extracted["customer"] = normalized_customer
     extracted["customer_type"] = customer_type
 
+    # 新規追加: 現場名から通常修理/出張修理を分類
+    extracted["repair_location_type"] = classify_repair_location(extracted.get("site_name"))
+
     parts_list = extracted.get("parts_list", [])
     if isinstance(parts_list, list):
         for part in parts_list:
@@ -146,3 +149,18 @@ def apply_all_normalizations(extracted: dict) -> dict:
 
     return extracted
     
+def classify_repair_location(site_name: Optional[str]) -> Optional[str]:
+    """
+    site_name（現場名）に自社拠点を示すキーワード（工場、第2、第2置場、第3、
+    第3置場、営業所、(営) 等）が含まれていれば 'on_site'（通常修理）、
+    含まれていなければ 'dispatch'（出張修理）と判定する。
+    site_nameが空の場合はNoneを返す（判定不能）。
+    """
+    if not site_name:
+        return None
+
+    for keyword in IN_HOUSE_SITE_KEYWORDS:
+        if keyword in site_name:
+            return "on_site"
+
+    return "dispatch"

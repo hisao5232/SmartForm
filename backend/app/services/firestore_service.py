@@ -101,6 +101,13 @@ class FirestoreService:
                         is_match = False
                         break
 
+                # 新規追加: 作業場所区分（on_site / dispatch）の完全一致フィルタ
+                elif key == "repair_location_type":
+                    field_val = str(extracted.get("repair_location_type") or "")
+                    if field_val != target_val_str:
+                        is_match = False
+                        break
+
                 elif key == "start_date":
                     if not doc_date or doc_date < target_val_str:
                         is_match = False

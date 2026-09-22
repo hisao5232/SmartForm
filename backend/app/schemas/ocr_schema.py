@@ -77,6 +77,11 @@ class ExtractedData(BaseModel):
     )
     billing_to: Optional[str] = Field(default=None, description="請求先")
     site_name: Optional[str] = Field(default=None, description="現場名")
+    repair_location_type: Optional[str] = Field(
+        default=None,
+        description="site_name（現場名）から判定される修理区分。"
+                    "この値はGeminiではなくPython側で計算するため、出力しなくてよい"
+    )
     machine_name: Optional[str] = Field(default=None, description="機械名 (例: RX306)")
     management_no: Optional[str] = Field(default=None, description="管理番号")
     hour_meter: Optional[str] = Field(default=None, description="アワーメーター")

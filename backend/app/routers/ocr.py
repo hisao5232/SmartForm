@@ -155,6 +155,7 @@ async def search_documents(
     part_no: Optional[str] = Query(None, description="部品番号"),      # ← 追加
     supplier: Optional[str] = Query(None, description="部品提供先"),   # ← 追加
     status: Optional[str] = Query(None, description="処理ステータス (completed / failed)"),
+    repair_location_type: Optional[str] = Query(None, description="作業場所区分 (on_site / dispatch)"),
 ):
     try:
         search_params = {
@@ -171,6 +172,7 @@ async def search_documents(
             "part_no": part_no,      # ← 追加
             "supplier": supplier,    # ← 追加
             "status": status,  # ← 追加
+            "repair_location_type": repair_location_type,  # ← 追加
         }
 
         active_params = {
