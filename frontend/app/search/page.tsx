@@ -20,6 +20,7 @@ const initialSearchParams: SearchParams = {
   part_no: '',
   supplier: '',
   status: '',
+  repair_location_type: '',
 };
 
 // 金額文字列（"1,000" など）を数値に変換するヘルパー

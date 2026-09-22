@@ -16,6 +16,7 @@ export interface SearchParams {
   part_no: string;
   supplier: string;
   status: string;
+  repair_location_type: string;  // ← 追加（'', 'on_site', 'dispatch'）
 }
 
 interface SearchFormProps {
@@ -125,7 +126,6 @@ export default function SearchForm({
           />
         </div>
 
-        {/* 新規追加: 得意先区分（自社リース機 / 先方企業）の絞り込み */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1">得意先区分</label>
           <select
@@ -196,6 +196,21 @@ export default function SearchForm({
             <option value="">すべて</option>
             <option value="completed">✅ 完了</option>
             <option value="failed">⚠️ 失敗</option>
+          </select>
+        </div>
+
+        {/* 新規追加: 作業場所の分類（通常修理 / 出張修理） */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">作業場所区分</label>
+          <select
+            name="repair_location_type"
+            value={searchParams.repair_location_type}
+            onChange={handleChange}
+            className="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">すべて</option>
+            <option value="on_site">🏭 通常修理</option>
+            <option value="dispatch">🚚 出張修理</option>
           </select>
         </div>
 

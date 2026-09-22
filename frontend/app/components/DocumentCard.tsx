@@ -14,6 +14,8 @@ export interface ExtractedData {
   receipt_no?: string;
   customer?: string;
   customer_type?: 'own_lease' | 'client' | string;
+  site_name?: string;                                      // ← 追加
+  repair_location_type?: 'on_site' | 'dispatch' | string;   // ← 追加
   machine_name?: string;
   management_no?: string;
   hour_meter?: string | number;
@@ -139,7 +141,6 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
               <span className="text-xs text-slate-500 font-semibold block">修理受品書 No</span>
               <span className="font-medium text-slate-800">{ext.receipt_no || '-'}</span>
             </div>
-            {/* 変更: 得意先名の隣に得意先区分バッジを表示 */}
             <div>
               <span className="text-xs text-slate-500 font-semibold block">得意先名</span>
               <span className="font-medium text-slate-800">
@@ -153,6 +154,24 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
                     }`}
                   >
                     {ext.customer_type === 'own_lease' ? '自社リース機' : '先方企業'}
+                  </span>
+                )}
+              </span>
+            </div>
+            {/* 新規追加: 現場名の隣に作業場所区分バッジを表示 */}
+            <div>
+              <span className="text-xs text-slate-500 font-semibold block">現場名</span>
+              <span className="font-medium text-slate-800">
+                {ext.site_name || '-'}
+                {ext.repair_location_type && (
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      ext.repair_location_type === 'on_site'
+                        ? 'bg-sky-100 text-sky-700'
+                        : 'bg-orange-100 text-orange-700'
+                    }`}
+                  >
+                    {ext.repair_location_type === 'on_site' ? '通常修理' : '出張修理'}
                   </span>
                 )}
               </span>
@@ -181,7 +200,6 @@ export default function DocumentCard({ doc, onEdit, onDelete }: DocumentCardProp
               <span className="text-xs text-slate-500 font-semibold block">出張費作業時間</span>
               <span className="font-medium text-slate-800">{ext.travel_time || '-'}</span>
             </div>
-            {/* 変更: 使用部品代金合計 → 仕入部品合計・請求部品合計の2項目に分割 */}
             <div>
               <span className="text-xs text-slate-500 font-semibold block">仕入部品合計</span>
               <span className="font-bold text-slate-700 text-base">
